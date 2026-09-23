@@ -92,7 +92,7 @@ selector y **por qué el sustituto es legítimo** cuando el disparador real no s
 | **MN-09** | Ticket crafteado | `abrirConTicket(h, extra, usuario)` (`e2e-30`): `emitirTicketDetalle("deal", id, usuario, { deal: {...payload.deal, ...últimoPatch, ...extra}, usuario, tab: null, ts })` en el tubo y `ctx.newPage().goto(url + "?t=" + uuid)`. Sirve para menús y compuertas en un estado que el flujo no da rápido (publicada, otra sesión); no para el veredicto (la foto no vuelve al tubo). **Prerrequisito**: `abrirConTicket` toma el PRIMER ticket `tipo: "deal"` de `TICKETS_EMITIDOS` y lanza «no encuentro el ticket del detalle … ¿se abrió el detalle desde el tubo?» si no hay ninguno; por tanto exige un MN-02 previo en la misma sesión (dentro del caso o del archivo) y craftea ESE deal, no uno elegido por id. |
 | **MN-10** | Restauración | `fotoRepos` / `restaurarRepos` de las claves `pc_repo_*` (`e2e-29`, `e2e-15-bis-bis`; barren todo `pc_repo_*`). Las claves reales las arma `crearRepo(nombre)` como `"pc_repo_" + nombre` con forma `{[tenantId]: {[id]: valor}}`: `pc_repo_otorgamiento_visado` (`repoVisado`), `pc_repo_verificacion_telefonica` (`repoVerifTel`), `pc_repo_giro_asignacion` (`repoGiro`), `pc_repo_linea_comite` (`repoLineaComite`), `pc_repo_simulacion_version` (`repoSimVersions`), `pc_repo_solicitud_comite` (`repoSolicitudComite`), `pc_repo_factura_no_confirmada` (`repoNoConfirmadas`, el veto de CP-091; regla 6). En los CP se lee por `repoX.get(id)` desde `evaluate`, nunca por una clave abreviada. Retiro de la solicitud en `api2ListarProcesos()` y de `SOLIC_SEQ`, borrado de `fs_curse_<neg>`, filtro rápido al que estaba, sesión al `usuario0`, `det.close()`, `h.apagarDirectorio()`. Todo en el `finally`. |
 
-Y las capas que la suite exige: un caso nuevo toma el siguiente entero (162 en adelante), sube `CASOS_ESPERADOS` en
+Y las capas que la suite exige: un caso nuevo toma el siguiente entero (163 en adelante), sube `CASOS_ESPERADOS` en
 `tests/contract/suite.test.mjs` y se cita en la regla y en `invariantes.md`; un gate de contrato nuevo lleva
 `sonda negativa` y lee `canonico(src)` (ADR-0006).
 
@@ -886,13 +886,13 @@ el tab «Mensajería» del detalle.
 - **Criterio**: CA-1 de HU-37 · **Dirección**: positiva y negativa · **Capa**: suite · **Cobertura actual**: **caso 78** y **caso 81**. · **Resultado esperado**: el de esos casos.
 
 ### CP-104 · Un deudor con facturas a comité califica Giro Normal aunque esté verificado, sin excepciones y no sea cliente nuevo
-- **Criterio**: CA-2 de HU-37 · **Dirección**: negativa (no es GE) · **Capa**: suite · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0017; G-20 y G-34; T1: `asignarGiros` recibe un quinto hecho por deudor, «sus facturas requieren comité», y `giroResumenDeal` lo pasa). «El resultado de la línea sí afecta el tipo de giro; si hay que pedir comité el giro debe ser Giro Normal». · **Precondición**: `asignarGiros` con un deudor verificado, sin marcas, cliente no nuevo, y el hecho de comité verdadero (`REQUIERE_COMITE` en su asignación, caso 134). · **Resultado esperado**: todas sus facturas GN; el chip de giro dice Normal y su `title` nombra el comité como causa.
+- **Criterio**: CA-2 de HU-37 · **Dirección**: negativa (no es GE) · **Capa**: suite · **Cobertura actual**: caso **162** (implementado el 23-09-2026; ADR-0017, regla 63; G-20 y G-34; T1: `asignarGiros` recibe el quinto hecho por deudor, `requiereComite` → `sinComite`, y `girosDeDeal` lo saca de las facturas `REQUIERE_COMITE` de la versión). «El resultado de la línea sí afecta el tipo de giro; si hay que pedir comité el giro debe ser Giro Normal». · **Precondición**: `asignarGiros` con un deudor verificado, sin marcas, cliente no nuevo, y `requiereComite` verdadero; y `girosDeDeal` con una asignación (`linea`) que deja sus facturas en `REQUIERE_COMITE`. · **Resultado esperado**: todas sus facturas GN con `hechos.sinComite === false`; el chip de giro dice Normal y su `title` nombra el comité como causa (el `title` sigue por e2e, CP-128).
 
 ### CP-105 · La primera operación va completa a GN
 - **Criterio**: CA-3 de HU-37 · **Capa**: suite · **Cobertura actual**: **caso 79**. · **Resultado esperado**: todo GN.
 
 ### CP-128 · Sin comité los cuatro hechos siguen decidiendo (GE cuando corresponde) y la suma por tipo sigue siendo el monto a girar; en pantalla, el chip del deudor a comité dice Normal
-- **Criterio**: CA-2 (segunda dirección) y CA-4 de HU-37 (ADR-0017: «con comité → Normal; sin comité → lo que ya decidían los cuatro hechos» y «la regla de oro se conserva») · **Dirección**: positiva (sin comité nada cambia respecto de los casos 78–81) y de conservación (regla de oro) · **Capa**: suite + e2e. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0017, G-34). La dirección «sin comité» nace en verde —fija lo que los casos 78, 80 y 81 ya deciden— y protege que el quinto hecho no se cuele en falso; el chip en pantalla nace en rojo.
+- **Criterio**: CA-2 (segunda dirección) y CA-4 de HU-37 (ADR-0017: «con comité → Normal; sin comité → lo que ya decidían los cuatro hechos» y «la regla de oro se conserva») · **Dirección**: positiva (sin comité nada cambia respecto de los casos 78–81) y de conservación (regla de oro) · **Capa**: suite + e2e. · **Cobertura actual**: suite: caso **162** (implementado el 23-09-2026; la dirección «sin comité» es idéntica al caso 78 y 50 carteras al azar conservan la regla de oro sin ningún deudor a comité en Express); el chip en pantalla sigue NUEVO (e2e).
 - **Precondición**: suite: la entrada de los casos 78 y 80 con el quinto hecho falso en todos los deudores, y luego verdadero en uno (A). e2e: MN-01 «Sin línea» fila 0, MN-02, MN-03 «Todo lo disponible» (un deudor con «Solicitud línea $Z», `e2e-29-b`).
 - **Pasos**: suite: 1) `asignarGiros` con el hecho falso: comparar con el resultado de los casos 78 y 80; 2) con el hecho verdadero en A: sumar GE + GN. e2e: 3) leer los chips de giro por `title` en el pie de la tarjeta (los que `e2e-14-c` lee como «Por evaluar»), del deudor con «Solicitud línea» y de uno con cupo.
 - **Resultado esperado**: paso 1: idéntico a los casos 78 y 80 (GE donde era GE); paso 2: A entero en GN y GE + GN = monto a girar (regla 22, caso 80); paso 3: el deudor con solicitud dice Normal con el comité como causa en el `title`; el deudor con cupo, lo que sus cuatro hechos digan.
@@ -1023,7 +1023,7 @@ Una fila por historia: sus CP, cuáles están cubiertos hoy (con el id que los c
 | HU-42 [ADR-0018; 130 retirado] | 129, 131, 132, 138–142 | 129 (casos 21–23, vía CP-119: vigente hoy · cambia con ADR-0018, se invierte), 131 (casos 21, 25, 157), 141 parcial (casos 25, 95: el veto en la suite) | 138, 139, 140, 141, 142 | 132, 138, 139, 140, 141 | — |
 | HU-35 [D4 cerrada, ADR-0015; 097 retirado] | 095–096, 098, 126, 127, 133 | 098 (casos 150, 125) | 095, 098, 126, 127 | 095, 096, 133 | — |
 | HU-36 | 099–102 | 099 (caso 88), 100 (caso 144), 101 (caso 86), 102 (casos 148, 136) | 100, 102 | 099 | — |
-| HU-37 [ADR-0017] | 103–105, 128 | 103 (casos 78, 81), 105 (caso 79) | 128 | 104, 128 | — |
+| HU-37 [ADR-0017; implementada 23-09-2026] | 103–105, 128 | 103 (casos 78, 81), 104 (caso 162), 105 (caso 79), 128 parcial (caso 162 en la suite; el chip por e2e) | 128 | — | — |
 | HU-38 | 106–108 | 107 (caso 147), 108 (caso 147) | 107, 108 | 106 | — |
 | HU-39 | 109–112, 118 | 109 (casos 117, 118), 118 parcial (`regla_transiciones.test.mjs` fija la guarda de `moverEtapa` como texto) | 109, 110, 118 (`moveTo`) | 110, 111, 118 | 112 |
 | HU-40 | 113–114 | 114 (casos 110, 112) | — | 113 | — |
@@ -1088,28 +1088,28 @@ dan vuelta con su mismo id en el commit del ADR: CP-091 (`e2e-6-b`), CP-119 y CP
 Por la capa e2e: `e2e-13-octies-bis-a`, `e2e-13-sexdecies-a/c/d`, `e2e-12-bis-a/b/d`, `e2e-14-a/b/c`, `e2e-29-a/b`,
 `e2e-15-bis-bis-a/b`, `e2e-58`, `e2e-30`, `e2e-13-quaterdecies`. Por la suite: casos 3, 4, 21–33, 36, 38, 47, 52, 55,
 56, 58, 76–81, 83, 85, 86, 88, 99, 100, 105, 106, 110, 112, 114, 117–119, 124–126, 134–136, 140–144, 146–150, 154, 157,
-158, 159, 160, 161 (el 145 —ATR-01, quién autoriza un descuento— no lo cita ningún CP; y `regla_35`, `regla_40`, `regla_transiciones`,
+158, 159, 160, 161, 162 (el 145 —ATR-01, quién autoriza un descuento— no lo cita ningún CP; y `regla_35`, `regla_40`, `regla_transiciones`,
 `regla_estado_pestanas` como texto; `regla_33` vigila la solicitud duplicada, no las mutaciones del paquete). De esos
-68, **33 están cubiertos del todo** —entre ellos los tres que la decisión del usuario dejó **implementados como están**:
+70, **34 están cubiertos del todo** —entre ellos los tres que la decisión del usuario dejó **implementados como están**:
 CP-085 y CP-094 (la clave estable es el versionado, G-13 cerrado) y CP-028 (el gesto explícito, D1), y los dos de HU-42
-que remiten a lo que los casos 21–23 y 157 ya fijan (CP-129, que se da vuelta con ADR-0018, y CP-131)— y **33 son
+que remiten a lo que los casos 21–23 y 157 ya fijan (CP-129, que se da vuelta con ADR-0018, y CP-131)— y **34 son
 parciales** (CP-001, 015, 027, 037, 041, 042, 046, 054, 058, 065, 066, 068, 069, 072, 074, 076, 078, 080, 081, 089, 091,
-092, 098, 099, 100, 102, 107, 108, 109, 115, 116, 118, 134): la conducta está en la suite, en un gate de texto o en un e2e
+092, 098, 099, 100, 102, 107, 108, 109, 115, 116, 118, 128, 134): la conducta está en la suite, en un gate de texto o en un e2e
 vecino y falta el caso en pantalla (HU-01, HU-06, HU-10, HU-14, HU-15, HU-16, HU-18, HU-23, HU-25, HU-26, HU-27, HU-28,
 HU-29, HU-33, HU-35, HU-36, HU-38, HU-39, HU-41), falta la dirección negativa (CP-054, CP-069, CP-074, CP-099), el e2e
 que se cita sólo la cubre bajo condición (CP-066) o sólo mide el aviso sin contar versiones (CP-134). CP-141 es parcial
-en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **65 CP
-son enteramente nuevos**; en total, 98 CP piden al menos un caso nuevo (33 + 65), y 68 + 65 = 133.
+en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **63 CP
+son enteramente nuevos**; en total, 97 CP piden al menos un caso nuevo (34 + 63), y 70 + 63 = 133.
 
 **Nuevos por capa:** **e2e 50** (en 12 archivos nuevos, `27` … `38`, más tres ids que van a archivos existentes,
 `21_29` y `17_15_bis_bis`; 30 de ellos fijan conducta vigente sin gate en pantalla —CP-001, 015, 027, 037, 041, 046,
 058, 065, 066, 068, 069, 072, 074, 076, 078–081, 089–092, 098, 100, 102, 107, 108, 109, 115, 116; CP-091 se escribe
 fijando lo vigente y se da vuelta con ADR-0018— y 20 dependen de un gap o de una decisión ya tomada —CP-013, 034–036,
 042 (el tooltip, nace en rojo), 071, 095, 110, 118 (`moveTo`), 123, 124, 126, 127, 128, 137, 138–142—; CP-111 es sólo
-de suite porque «Avanzar a» no ofrece «Cesión») · **suite 59** (del 162 en adelante; `CASOS_ESPERADOS` sube en cada
+de suite porque «Avanzar a» no ofrece «Cesión») · **suite 57** (del 163 en adelante; `CASOS_ESPERADOS` sube en cada
 commit que los agrega, y se dice) · **contrato 5** (CP-011, CP-019, CP-031, CP-033, CP-112; todos con sonda negativa
-sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en el motor y en la pantalla (50 + 59 + 5 =
-114 casos para 98 CP).
+sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en el motor y en la pantalla (50 + 57 + 5 =
+112 casos para 97 CP).
 
 **Decisiones del 22 y del 23-09-2026.** Cerradas y aplicadas: **D1** (ADR-0013: CP-028 y CP-030 protegen el gesto
 explícito; CP-031/033 retiran el anuncio; CP-034–036, CP-122 y CP-123 fijan el evento de evaluación, las cinco versiones

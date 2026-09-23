@@ -367,9 +367,8 @@ las cinco cuentan igual; el evento es un gesto del **ejecutivo**: simular es la 
 al re-evaluar la oferta («Re-evaluar operación», el botón del resumen del detalle, bajo «La selección
 cambió») y «el cliente simula» del modelo es una forma de hablar —no hay simulación del cliente en
 ningún canal, ni portal de autoservicio ni intent del Agente IA (definición del negocio, 23-09-2026)—;
-(b) el resultado de líneas **no entra** al criterio de giro (LIN-01 bloquea la
-integración aparte, regla 41), contra M-33 → **decidido: implementar** (ADR-0017): si hay que pedir
-comité, el giro es Normal; (c) el pricing compara contra **el** último negocio del cliente (no del par)
+(b) el resultado de líneas **entra** al criterio de giro desde el 23-09-2026 (ADR-0017, regla 63, caso
+162): si hay que pedir comité, el giro es Normal (LIN-01 sigue bloqueando la integración aparte, regla 41); (c) el pricing compara contra **el** último negocio del cliente (no del par)
 y no contra «los últimos negocios»: `spec-pricing-simulacion.md` §4.2 fija **el** último negocio, en
 singular, como tasa top-down, y ningún spec define una ventana de N negocios ni un promedio (M-35,
 **definición confirmada**: en la demo ese historial es dato generado y en producción la fuente es el
@@ -637,8 +636,8 @@ resultado de la evaluación son los montos a girar por giro normal o express.
 
 **Qué hace el sistema hoy.**
 
-- *GE / GN.* `asignarGiros`: GE / GN según el catálogo declarativo de tipos y sus cuatro
- hechos por deudor (`spec-modelo-giro.md` §2, §2.1 y §4; regla 22, gates 81, 83–84). Acá sólo cuándo
+- *GE / GN.* `asignarGiros`: GE / GN según el catálogo declarativo de tipos y sus cinco
+ hechos por deudor (el quinto, `sinComite`, desde ADR-0017) (`spec-modelo-giro.md` §2, §2.1 y §4; regla 22, gates 81, 83–84). Acá sólo cuándo
  corre, qué recibe y qué devuelve (§7.4); el catálogo no se repite.
 - *Inyección al core.* `aprobarIntegracion`: OTG-01 → `controlesIntegracion`
  devuelve las faltas con código —OTG-02 (visado pendiente), VER-01 (`pend > 0`), LIN-01 (cada factura
@@ -654,10 +653,11 @@ resultado de la evaluación son los montos a girar por giro normal o express.
  el 148 el congelado en la inyección; la regla 43 del vault todavía cita «caso 145», desfase de la
  renumeración del merge de la sesión paralela). El monto no se inventa.
 
-**Diferencias y pendientes.** M-40 implementado. **M-33 implementado distinto → decidido:
-implementar** (ADR-0017): el resultado de líneas entra al criterio del giro —si las facturas del
-deudor requieren comité, el giro es **Normal** aunque cumpla las condiciones de Express—; hoy
-`asignarGiros` recibe cuatro hechos y ninguno de líneas (LIN-01 bloquea la integración aparte); dos
+**Diferencias y pendientes.** M-40 implementado. **M-33 implementado** el 23-09-2026
+(ADR-0017, regla 63, caso 162): el resultado de líneas entra al criterio del giro —si las facturas del
+deudor requieren comité, el giro es **Normal** aunque cumpla las condiciones de Express—; `asignarGiros`
+recibe el quinto hecho por deudor (`requiereComite` → `sinComite`) y el adaptador `girosDeDeal` lo saca de
+la asignación de líneas de la última versión (LIN-01 sigue bloqueando la integración aparte); dos
 tipos y no tres
 (`spec-modelo-giro.md` §7); GN como disyunción pendiente de confirmar (§2 «Supuesto explícito»). El
 contrato de entrega a Tesorería (payload, endpoint, idempotencia, evento) no está modelado
@@ -814,7 +814,7 @@ línea cambia con el próximo commit; la definición, no.
 | M-30 | La línea es un monto; la asignación es por factura | implementado | `asignarLineas` `resFacturas` con su `origen`; regla núcleo 9; `spec-asignacion-lineas.md` §2.1, §2.4 |
 | M-31 | Una factura puede asociarse a más de una línea (LF2–LF3) | implementado | `origen.push`; «una factura se reparte entre ambas», dice el comentario de `asignarLineas`; sólo dentro de la cascada del par |
 | M-32 | No se cursa con línea por monto parcial | implementado | La condición de `asignarLineas`: `m ≤ restPar` y ≤ `dispCliente` y ≤ `restDeudor`; si no, completa a `REQUIERE_COMITE`; LIN-01 (regla 41) |
-| M-33 | Giro GE / GN según cliente nuevo, otorgamiento, verificación y líneas | implementado distinto → **decidido: implementar** (ADR-0017: con comité el giro es Normal) | `asignarGiros`: líneas no entran al criterio; dos tipos; GN disyunción (`spec-modelo-giro.md` §2) |
+| M-33 | Giro GE / GN según cliente nuevo, otorgamiento, verificación y líneas | implementado → **implementado el 23-09-2026** (ADR-0017, regla 63, caso 162: con comité el giro es Normal) | `asignarGiros`: quinto hecho `sinComite` por deudor, que `girosDeDeal` saca de las facturas `REQUIERE_COMITE` de la versión; dos tipos; GN disyunción (`spec-modelo-giro.md` §2) |
 | M-34 | Pricing asigna tasa por deudor | implementado | `spreadSugerido`; `SPREAD_MIN_DEUDOR`; `tasaDe`; `prorratearOperacion` |
 | M-35 | Tasa equivalente vs. tasa de los últimos negocios | implementado (definición ajustada 22-09-2026: contra el último negocio del cliente; en producción la fuente es el core, dato / contrato) | `tasaEquivalente`; `tasaUltimoNegocio` (**el** último negocio del **cliente**, sintético y sembrado sólo por cliente en `historialComercial`, no del par); `tasaModo` |
 | M-36 | Condiciones comerciales versionadas | implementado distinto → **decidido: implementar** (ADR-0013: la simulación emite versión con el modo de tasa y las condiciones) | `snapVersionCli` y `huellaOperacion` no contienen tasa, comisión ni anticipo; la simulación inicial no emite versión y la v1 se emite retroactiva en la primera re-evaluación |
@@ -823,10 +823,10 @@ línea cambia con el próximo commit; la definición, no.
 | M-39 | Resultado: asignación de líneas y solicitudes | implementado | `asignarLineas` devuelve `solicitudes`; `lineaDeVersion`; `solicitudComiteDeOferta` |
 | M-40 | Resultado: montos a girar GE / GN | implementado | `asignarGiros` `porTipo` / `porDeudor`; `giroDeal` / `giroCongelado`; regla 22 |
 
-Conteo sobre las 40 cláusulas: **28 implementadas** (14 medidas, tres implementadas el 23-09-2026 —M-09, ADR-0014; M-10, regla 61; M-19, regla 62— más 11 por definición ajustada: M-05,
-M-06, M-12, M-15, M-20, M-23, M-25, M-27 y M-35 el 22-09-2026, y M-22 y M-28 el 23-09-2026) · **9
-implementadas distinto** (M-01, M-02, M-07, M-13, M-21, M-24, M-26, M-33, M-36: las
-nueve con «decidido: implementar» y ninguna con una pregunta abierta) · **3 pendientes** (M-08 es de
+Conteo sobre las 40 cláusulas: **29 implementadas** (14 medidas, cuatro implementadas el 23-09-2026 —M-09, ADR-0014; M-10, regla 61; M-19, regla 62; M-33, ADR-0017— más 11 por definición ajustada: M-05,
+M-06, M-12, M-15, M-20, M-23, M-25, M-27 y M-35 el 22-09-2026, y M-22 y M-28 el 23-09-2026) · **8
+implementadas distinto** (M-01, M-02, M-07, M-13, M-21, M-24, M-26, M-36: las
+ocho con «decidido: implementar» y ninguna con una pregunta abierta) · **3 pendientes** (M-08 es de
 calendario, con parámetro huérfano; M-18 y M-29 son de máquina de estados: las tres con «decidido:
 implementar»; M-08 con ADR-0019 en lo que el reinicio re-origina, M-18 con ADR-0015 para el comité y
 ADR-0018 para la verificación) · **0 decisiones abiertas** (la última, M-22, cerrada el 23-09-2026: la
@@ -877,7 +877,7 @@ Cada ítem dice qué pide el modelo o el spec, qué se buscó en el fuente y qu�
 | Líneas | La consulta A23 sin consumidor; transacción, lock y `requiere_resimulacion` inexistentes | `spec-ciclo-factura.md` §23a; `spec-asignacion-lineas.md` §6 |
 | Líneas | LF1 tras la primera operación; qué se pide al comité en estado A | `spec-ciclo-factura.md` §24 |
 | Líneas | Si el tipo de la solicitud debe seguir al motivo (M-28): hoy la solicitud automática pide siempre líneas puntuales cliente-deudor aunque el motivo sea `cliente`, `deudor` o `lf1` | `solicitudComiteDeOferta` (`tipo: "modificar"`, `subtipo: "agregar_deudores"`, `propGlobal: 0`, `tipoLinea: "puntual"`); `RESOLUCION_COMITE` sólo aporta `pide` / `alcance`; `api1Inyeccion` no transforma |
-| Giro | El resultado de líneas entra al criterio (M-33): un deudor con facturas a comité califica Giro Normal aunque cumpla Express; `asignarGiros` recibe el quinto hecho y `giroResumenDeal` lo pasa → **decidido: implementar** (ADR-0017; T1) | `asignarGiros` recibe cuatro hechos, ninguno de líneas |
+| Giro | El resultado de líneas entra al criterio (M-33): un deudor con facturas a comité califica Giro Normal aunque cumpla Express; `asignarGiros` recibe el quinto hecho y el adaptador lo pasa → **implementado el 23-09-2026** (ADR-0017, regla 63, caso 162; T1) | `GIRO_HECHOS` declara `sinComite`, GE lo exige, `girosDeDeal` lo lee de `lineaDeVersion` (o de la asignación que le pasen) y `giroResumenDeal` lo cubre en su firma |
 | Giro | Tercer tipo; GN disyunción o conjunción; pantalla de la asignación (§7 del spec vs regla 22) | `spec-modelo-giro.md` §2, §7 |
 | Giro | Contrato de entrega a Tesorería (payload, endpoint, idempotencia, evento) | No modelado (`spec-ciclo-factura.md` §23b); `recibirGiroTesoreria` es sólo el callback |
 | Pricing | Tasa de referencia (M-35): **definición confirmada**, el último negocio del cliente; lo pendiente es la fuente en producción —el último negocio cursado del cliente en el core (dato / contrato)— porque en la demo ese historial es dato generado | «últimos negocios» (plural) o promedio: no existe; sólo `tasaUltimoNegocio`, del **cliente** (sintético, `historialComercial` siembra sólo por cliente), no del par; `spec-pricing-simulacion.md` §4.2 fija **el** último negocio, en singular, como tasa top-down, y ningún spec define una ventana ni un promedio |

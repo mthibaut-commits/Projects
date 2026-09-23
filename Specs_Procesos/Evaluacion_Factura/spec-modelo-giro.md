@@ -27,12 +27,14 @@ simulación → monto a girar → prorrateo por factura → ASIGNACIÓN DE GIROS
 
 | Código | Tipo | Califica |
 |---|---|---|
-| **GE** | Giro Express | La verificación la dio por **no necesaria** **y** el otorgamiento **no** dejó marcas de excepción — ni del cliente ni del deudor |
+| **GE** | Giro Express | La verificación la dio por **no necesaria** **y** el otorgamiento **no** dejó marcas de excepción — ni del cliente ni del deudor — **y** la asignación de líneas cubrió sus facturas: ninguna a comité (ADR-0017, regla 63) |
 | **GN** | Giro Normal | Todo lo demás |
 
-**Express exige las dos condiciones a la vez; basta que falle una para caer en Normal.** Eso incluye
-la factura verificada cuyo deudor arrastra una excepción, y la factura sin excepciones cuyo deudor
-quedó por verificar.
+**Express exige las tres condiciones a la vez; basta que falle una para caer en Normal.** Eso incluye
+la factura verificada cuyo deudor arrastra una excepción, la factura sin excepciones cuyo deudor
+quedó por verificar, y —desde el 23-09-2026 (ADR-0017, regla 63)— la factura de un deudor cuyas
+facturas requieren comité porque la línea no las cubre: la operación depende de una línea que todavía
+no existe, así que no gira por la vía rápida aunque cumpla lo demás.
 
 > **Supuesto explícito.** El enunciado de negocio describe GN como «por verificar **y** con marcas de
 > excepción». Se implementó como **disyunción**: si fuera conjunción, una factura por verificar y sin
@@ -51,7 +53,7 @@ califica — y el último lleva `resto: true`, que recoge lo que no calificó en
 una factura podría quedar sin tipo y la suma dejaría de cuadrar.
 
 Un criterio sólo puede pedir **hechos que el modelo declara** (`verificado`, `sinExcepcionCliente`,
-`sinExcepcionDeudor`, `sinPrimeraOperacion`). Uno que pida cualquier otra cosa no lo cumple nadie y su
+`sinExcepcionDeudor`, `sinPrimeraOperacion`, `sinComite`). Uno que pida cualquier otra cosa no lo cumple nadie y su
 tipo queda vacío: es deliberado, para que un catálogo mal escrito se note en vez de desviar plata en
 silencio.
 
@@ -105,7 +107,7 @@ La asignación congelada **gana siempre** sobre el cálculo del día.
 
 ## 6. Desacoplamiento
 
-El motor **no llama** al de verificación ni al de otorgamiento: recibe sus veredictos ya calculados.
+El motor **no llama** al de verificación, al de otorgamiento ni al de líneas: recibe sus veredictos ya calculados.
 Tres razones, y las tres son la misma:
 
 - en producción esto corre en el **servidor**, junto al resto de las decisiones que mueven plata;
@@ -114,7 +116,7 @@ Tres razones, y las tres son la misma:
 - y un test puede **contradecir al navegador** —inyectar «este deudor está verificado» aunque el
   predictor diga lo contrario—, que es la única forma de probar que decide con lo que le pasan.
 
-Un **adaptador** aparte (`girosDeDeal`) es el único que conoce a los tres motores a la vez y arma la
+Un **adaptador** aparte (`girosDeDeal`) es el único que conoce a los cuatro motores a la vez y arma la
 entrada. En la auditoría de aislamiento el motor sale limpio (sólo su propio catálogo) y el adaptador
 arrastra lo que arrastran los motores que consulta, que es exactamente su trabajo.
 
@@ -129,6 +131,7 @@ arrastra lo que arrastran los motores que consulta, que es exactamente su trabaj
 | `excepcionDeudor` | `{ [deudor]: bool }` — marcas del otorgamiento, por deudor |
 | `excepcionCliente` | `bool` — marcas del otorgamiento, del cliente |
 | `primeraOperacion` | `bool` — estado del cliente |
+| `requiereComite` | `{ [deudor]: bool }` — asignación de líneas: sus facturas quedaron en `REQUIERE_COMITE` (ADR-0017); el adaptador lo saca de la última versión, o de la asignación que se le pase |
 | `montoGirar` | El total de la operación, para comprobar el cuadre |
 
 **Salida**: los montos y las facturas por tipo, la fila de cada factura con su tipo y los hechos que

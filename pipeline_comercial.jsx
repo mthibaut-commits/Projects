@@ -5453,21 +5453,24 @@ const GIRO_TIPOS_BASE = [
     codigo: "GE",
     label: "Giro Express",
     orden: 1,
-    desc: "Sin necesidad de verificación y sin marcas de excepción, ni del cliente ni del deudor.",
-    requiere: { verificado: true, sinExcepcionCliente: true, sinExcepcionDeudor: true, sinPrimeraOperacion: true },
+    desc: "Sin necesidad de verificación, sin marcas de excepción —ni del cliente ni del deudor— y con la línea cubriendo sus facturas (nada a comité).",
+    requiere: { verificado: true, sinExcepcionCliente: true, sinExcepcionDeudor: true, sinPrimeraOperacion: true, sinComite: true },
   },
   {
     codigo: "GN",
     label: "Giro Normal",
     orden: 2,
     resto: true,
-    desc: "Todo lo demás: facturas por verificar, o con excepciones del cliente o del deudor. La primera operación del cliente entra completa acá.",
+    desc: "Todo lo demás: facturas por verificar, con excepciones del cliente o del deudor, o que requieren comité porque la línea no las cubre. La primera operación del cliente entra completa acá.",
   },
 ];
 // Los HECHOS que el motor evalúa por deudor. Se declaran para que el catálogo no pueda pedir una
 // condición que nadie calcula: un `requiere` con una clave que no está acá no lo cumple nadie y la
 // factura caería siempre al resto, sin que nada lo dijera.
-const GIRO_HECHOS = ["verificado", "sinExcepcionCliente", "sinExcepcionDeudor", "sinPrimeraOperacion"];
+// `sinComite` es el QUINTO hecho (ADR-0017, regla 63): el resultado de la asignación de LÍNEAS. Un deudor cuyas
+// facturas requieren comité no gira Express aunque cumpla las otras cuatro — la operación depende de una línea
+// que todavía no existe. Decidido por el usuario el 22-09-2026: «si hay que pedir comité el giro debe ser Normal».
+const GIRO_HECHOS = ["verificado", "sinExcepcionCliente", "sinExcepcionDeudor", "sinPrimeraOperacion", "sinComite"];
 
 // ¿Este deudor califica para este tipo? Conjunción: tienen que cumplirse TODAS las condiciones que
 // el tipo declara. Un tipo sin condiciones califica a todos —es lo que hace útil al `resto`—.
@@ -5484,6 +5487,7 @@ function giroCalifica(tipo, hechos) {
 //   excepcionDeudor:   { [deudor]: bool } ← marcas de excepción del OTORGAMIENTO, por deudor
 //   excepcionCliente:  bool               ← marcas de excepción del OTORGAMIENTO, del cliente
 //   primeraOperacion:  bool               ← estado del cliente (API de Security)
+//   requiereComite:    { [deudor]: bool } ← asignación de LÍNEAS: sus facturas no quedaron cubiertas (ADR-0017)
 //   montoGirar:        number             ← el total de la operación, para comprobar el cuadre
 // }
 function asignarGiros(entrada, opts) {
@@ -5509,6 +5513,7 @@ function asignarGiros(entrada, opts) {
       sinExcepcionCliente: !excCli,
       sinExcepcionDeudor: !(e.excepcionDeudor || {})[d],
       sinPrimeraOperacion: !primera,
+      sinComite: !(e.requiereComite || {})[d],
     };
   });
 
@@ -15264,12 +15269,13 @@ function DealDrawer({
                                     const exp = gd.tipo === "GE";
                                     const h = gd.hechos || {};
                                     const porQue = exp
-                                      ? "Sin verificación pendiente y sin marcas de excepción: puede girarse por la vía rápida."
+                                      ? "Sin verificación pendiente, sin marcas de excepción y con la línea cubriendo sus facturas: puede girarse por la vía rápida."
                                       : [
                                           !h.sinPrimeraOperacion ? "es la primera operación del cliente" : null,
                                           !h.sinExcepcionCliente ? "el cliente tiene marcas de excepción" : null,
                                           !h.verificado ? "el deudor requiere verificación" : null,
                                           !h.sinExcepcionDeudor ? "el deudor tiene marcas de excepción" : null,
+                                          !h.sinComite ? "sus facturas requieren comité: la línea no las cubre" : null,
                                         ]
                                           .filter(Boolean)
                                           .join(" · ");
@@ -24456,7 +24462,15 @@ function girosDeDeal(deal, estado) {
     const n = x.deudor.nombre || x.deudor.name || x.deudor;
     excepcionDeudor[n] = true;
   });
-  // 3) El monto a girar de cada factura sale del PRORRATEO, no de una regla de tres acá: es la única
+  // 3) Líneas, POR DEUDOR (ADR-0017, regla 63): las facturas que la asignación dejó en REQUIERE_COMITE marcan a
+  //    su deudor. La asignación es la de la última VERSIÓN de la operación —la que se simuló—, salvo que el
+  //    llamador pase la suya (`est.linea`; `null` explícito = sin asignación, ningún deudor a comité).
+  const linea = est.linea !== undefined ? est.linea : lineaDeVersion(deal);
+  const requiereComite = {};
+  ((linea && linea.facturas) || []).forEach((f) => {
+    if (f && f.estado === "REQUIERE_COMITE" && f.deudor) requiereComite[f.deudor] = true;
+  });
+  // 4) El monto a girar de cada factura sale del PRORRATEO, no de una regla de tres acá: es la única
   //    cifra que cuadra contra el total por construcción.
   const pro = est.prorrateo || null;
   const porId = {};
@@ -24474,6 +24488,7 @@ function girosDeDeal(deal, estado) {
     excepcionCliente,
     excepcionDeudor,
     primeraOperacion: esPrimeraOperacionCliente(deal, est.estadosCliente),
+    requiereComite,
     montoGirar: pro ? pro.montoGirar : null,
   };
 }
@@ -24511,7 +24526,9 @@ function giroResumenDeal(deal, estado) {
   const nTel = Object.keys((typeof VERIF_TEL !== "undefined" && VERIF_TEL[deal.id]) || {}).length;
   const nVer = Object.keys((typeof VERIF_VEREDICTO !== "undefined" && VERIF_VEREDICTO[deal.id]) || {}).length;
   const nVet = Object.keys((typeof NO_CONFIRMADAS !== "undefined" && NO_CONFIRMADAS[deal.id]) || {}).length;
-  const firma = `${VISADO_VER}|${fs.length}|${giroTotal}|${deal.stage}|${nTel}|${nVer}|${nVet}`;
+  // …y las versiones: el quinto hecho (líneas, ADR-0017) se lee de la última, así que una versión nueva lo mueve.
+  const nVs = ((typeof SIM_VERSIONS !== "undefined" && SIM_VERSIONS[deal.id]) || []).length;
+  const firma = `${VISADO_VER}|${fs.length}|${giroTotal}|${deal.stage}|${nTel}|${nVer}|${nVet}|${nVs}`;
   const hit = _GIRO_LISTA[deal.id];
   if (hit && hit.firma === firma) return hit.val;
   const r = prorratearConcepto(fs, giroTotal, (f) => f.monto || 0);

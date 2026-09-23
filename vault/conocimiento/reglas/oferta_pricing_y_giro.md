@@ -63,6 +63,7 @@ timestamp: 2026-09-17T15:29:14Z
 
 22. **Asignación de giros** (`asignarGiros`, `Specs_Procesos/Evaluacion_Factura/spec-modelo-giro.md`). Qué parte del monto a girar va por cada tipo de giro. El giro **siempre** se materializa en una transferencia que ejecuta **Tesorería** —módulo independiente al que este sistema sólo le entrega el resultado—. **REGLA DE ORO heredada del prorrateo: la suma por tipo es SIEMPRE el monto a girar.**
     - **GE (Giro Express)**: la verificación la dio por **no necesaria** Y el otorgamiento **no** dejó marcas de excepción, ni del cliente ni del deudor. **GN (Giro Normal)**: todo lo demás. Son las dos condiciones a la vez y basta que falle una para caer en Normal. **Supuesto explícito:** el enunciado decía «por verificar **y** con excepciones»; se implementó como **disyunción** porque con conjunción una factura por verificar y sin excepciones no calificaría en ningún tipo y la regla de oro se rompería. Pendiente de confirmar.
+    - **AMPLIACIÓN del 23-09-2026 (regla 63, ADR-0017):** Express exige ADEMÁS que la asignación de líneas haya cubierto las facturas del deudor —ninguna en `REQUIERE_COMITE`—; es el quinto hecho, `sinComite`. Lo de arriba sigue siendo verdad para los otros cuatro.
     - **Marca de excepción** = `excepcion` o `rechazado` **re-evaluable**. Un rechazo FIRME no es una marca: esa operación no se cursa, así que no llega a discutir de qué tipo es su giro.
     - **La calificación es POR DEUDOR y las facturas heredan.** Los dos motores de los que depende deciden por deudor, así que una factura no puede calificar distinto que sus hermanas. Las condiciones del CLIENTE entran igual en el bloque de hechos del deudor, para que el criterio se evalúe contra un solo objeto y un tipo nuevo pueda mezclar los dos niveles.
     - **Primera operación → todo GN**, y es aritmética, no una regla aparte: la regla 0 de verificación manda a llamar todas las facturas, así que ninguna califica para Express. El modelo declara `sinPrimeraOperacion` igual —no para duplicar la regla sino para poder **explicar** el resultado sin reconstruirlo—.
@@ -76,3 +77,24 @@ timestamp: 2026-09-17T15:29:14Z
     - **El aviso al tubo de que la oferta se simuló no salía nunca** (corregido el 12-09-2026). `simularOferta` armaba el patch **dentro** del updater de `setDeals` y posteaba `nex-simulado` a `window.opener` en la línea siguiente: `setDeals(fn)` no ejecuta `fn` en el acto —React lo llama al renderizar—, así que el patch todavía era `null` y el mensaje se descartaba. La operación quedaba simulada en el detalle y **«Sin simular» en el tubo para siempre**, que es exactamente lo que ese aviso viene a evitar. Ahora el updater deja el patch en un ref y lo postea un efecto, o sea después del commit.
     - **DESACOPLADO:** el motor **no llama** a los otros dos, recibe sus veredictos. El adaptador `girosDeDeal` es el único que conoce a los tres a la vez. En la auditoría, `asignarGiros` y `giroCalifica` salen **limpios** (sólo su catálogo) y el adaptador arrastra lo que arrastran los motores que consulta. El caso 81 le inyecta veredictos que contradicen al navegador y comprueba cuál manda. El **cuadre se informa, no se fuerza**: si no cuadra, el que está mal es quien armó la entrada, y taparlo con un ajuste escondería el error en el sitio equivocado.
     - **Giro Express va en AZUL** (17-09-2026, pedido del usuario), con el par que la app ya usa para lo informativo (`#2563EB` sobre `#EFF6FF`: CAT-2, Confirming, «Info»). Iba en verde, y en la fila del deudor el verde ya significa «Verificado» y «Con línea»: tres chips verdes seguidos se leían como el mismo estado repetido, cuando Express es la CONCLUSIÓN de los otros dos y no uno más. Cambia en `ChipGiro`, así que en los tres sitios a la vez (regla de arriba: un solo componente). En una operación cualquiera casi ningún deudor califica para Express —exige verificado Y sin marcas de excepción—, así que la sonda del detalle no lo vio y el color se comprobó en el fuente construido.
+
+63. **EL RESULTADO DE LÍNEAS ENTRA AL CRITERIO DEL GIRO: SI HAY QUE PEDIR COMITÉ, EL GIRO ES NORMAL** (23-09-2026, ADR-0017,
+      M-33 · G-20 y G-34; el usuario, 22-09-2026: «el resultado de la línea sí afecta el tipo de giro; si hay que pedir
+      comité el giro debe ser Giro Normal»). `asignarGiros` evalúa un QUINTO hecho por deudor, `sinComite`: si alguna
+      de sus facturas quedó en `REQUIERE_COMITE` en la asignación de líneas, el deudor no califica Giro Express aunque
+      esté verificado, sin marcas de excepción y no sea la primera operación del cliente — la operación depende de una
+      línea que todavía no existe. Sin comité, los cuatro hechos deciden como antes (regla 22), y la REGLA DE ORO se
+      conserva: la suma por tipo sigue siendo el monto a girar.
+    - **El motor sigue puro y declarativo**: `GIRO_HECHOS` declara `sinComite`, el tipo GE lo exige en su `requiere`, y
+      el hecho ENTRA por la entrada (`requiereComite: { [deudor]: bool }`), no se calcula adentro. El adaptador
+      `girosDeDeal` lo saca de las facturas `REQUIERE_COMITE` de la asignación de la última versión (`lineaDeVersion`),
+      o de la asignación que el llamador le pase (`est.linea`; `null` explícito = ninguna).
+    - **La firma del memo del tubo cubre las versiones** (`giroResumenDeal`): el hecho se lee de la última, así que una
+      re-evaluación que cambie la asignación mueve el chip. Sin eso, la tarjeta habría seguido mostrando el giro
+      anterior — la misma trampa que ya costó la verificación (regla 22).
+    - **El chip del deudor lo explica**: «sus facturas requieren comité: la línea no las cubre» se suma a las causas del
+      Normal, y el Express dice «con la línea cubriendo sus facturas».
+    - Caso **162**, en las dos direcciones: sin comité es idéntico al caso 78; con comité en un deudor que cumple todo lo
+      demás, todas sus facturas van a Normal; el catálogo lo declara; el adaptador marca a ESE deudor y a ningún otro; y
+      50 carteras al azar conservan la regla de oro sin ningún deudor a comité en Express. `spec-modelo-giro.md` §2, §2.1
+      y §6.1 quedaron con el quinto hecho.

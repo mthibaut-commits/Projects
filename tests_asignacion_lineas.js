@@ -7802,6 +7802,62 @@
        `${mudas0.length} muda(s) del motor, compuerta bloquea con cuenta ${compuertaOk} · solicitud muda no escribe (${r1 ? r1.ok : "?"}) ${sinEscribirOk} · declaración escribe y descuenta ${declaraOk} · todas justificadas → pasa ${justificaOk} · sonda ${sondaOk}`);
   }
 
+  {
+    // 162 · EL QUINTO HECHO (ADR-0017, regla 63): si las facturas del deudor requieren comité, el giro es Normal aunque
+    //       cumpla las cuatro condiciones de Express; sin comité deciden los cuatro hechos como antes (casos 78–81), y la
+    //       regla de oro se conserva. «El resultado de la línea sí afecta el tipo de giro; si hay que pedir comité el
+    //       giro debe ser Giro Normal» (el usuario, 22-09-2026).
+    const fs = [{ id: "f1", deudor: "D1", giro: 10000000 }, { id: "f2", deudor: "D1", giro: 5000000 },
+                { id: "f3", deudor: "D2", giro: 7000000 }, { id: "f4", deudor: "D3", giro: 3000000 }];
+    const base = { facturas: fs, verificado: { D1: true, D2: false, D3: true }, excepcionDeudor: { D3: true },
+                   excepcionCliente: false, primeraOperacion: false, montoGirar: 25000000 };
+    const ref = asignarGiros(base);                                                     // la entrada del caso 78, sin el hecho
+    const sin = asignarGiros({ ...base, requiereComite: { D1: false, D2: false, D3: false } });
+    const con = asignarGiros({ ...base, requiereComite: { D1: true } });               // D1: verificado, sin marcas, no nuevo… y a comité
+    const tipo = (r, id) => (r.filas.find((f) => f.id === id) || {}).tipo;
+    // (a) SIN comité nada cambia: idéntico al caso 78 y al motor sin el hecho.
+    const sinOk = JSON.stringify(sin.porTipo) === JSON.stringify(ref.porTipo) && tipo(sin, "f1") === "GE" && tipo(sin, "f2") === "GE"
+      && sin.porTipo.GE.monto === 15000000 && sin.porTipo.GN.monto === 10000000 && sin.porDeudor.D1.hechos.sinComite === true;
+    // (b) CON comité en D1 todas sus facturas van a Normal, con el hecho a la vista; la suma sigue cuadrando.
+    const conOk = tipo(con, "f1") === "GN" && tipo(con, "f2") === "GN" && con.porDeudor.D1.tipo === "GN"
+      && con.porDeudor.D1.hechos.sinComite === false && con.porDeudor.D2.hechos.sinComite === true
+      && con.porTipo.GE.monto === 0 && con.porTipo.GN.monto === 25000000 && con.cuadra === true && con.descuadre === 0;
+    // (c) El catálogo lo DECLARA: GE exige `sinComite` y `GIRO_HECHOS` lo conoce (lo que no está ahí no lo cumple nadie).
+    const catalogoOk = GIRO_HECHOS.includes("sinComite") && GIRO_TIPOS_BASE.find((t) => t.codigo === "GE").requiere.sinComite === true
+      && !!GIRO_TIPOS_BASE.find((t) => t.codigo === "GN").resto;
+    // (d) El ADAPTADOR lo saca de la asignación de líneas: una versión con facturas REQUIERE_COMITE de un deudor marca a
+    //     ESE deudor y a ningún otro; con `linea: null` explícito no hay comité; y la que se le pasa manda sobre la versión.
+    const deal = { id: "T-162", rutEmisor: "76.111.111-1", cliente: "Cliente 162", facturasOp: [fac("h1", LB[0], 20), fac("h2", LB[1], 12)] };
+    const n0 = nomDe(LB[0]), n1 = nomDe(LB[1]);
+    const pro162 = { filas: [{ id: "h1", giro: 19000000 }, { id: "h2", giro: 11000000 }], montoGirar: 30000000 };
+    const linea162 = { vacia: false, facturas: [{ id: "h1", folio: "h1", deudor: n0, estado: "REQUIERE_COMITE" }, { id: "h2", folio: "h2", deudor: n1, estado: "CON_LINEA" }] };
+    const eCon = girosDeDeal(deal, { linea: linea162, prorrateo: pro162 });
+    const eSin = girosDeDeal(deal, { linea: null, prorrateo: pro162 });
+    const adaptadorOk = eCon.requiereComite[n0] === true && !eCon.requiereComite[n1] && Object.keys(eSin.requiereComite).length === 0
+      && asignarGiros(eCon).porDeudor[n0].tipo === "GN" && asignarGiros(eCon).porDeudor[n0].hechos.sinComite === false;
+    // (e) La REGLA DE ORO con el quinto hecho al azar: ninguna factura sin tipo, la suma es el monto a girar, y todo
+    //     deudor a comité queda en Normal.
+    const rnd = pcRng(hashStr("giros-162"));
+    let malos = 0, comiteEnGE = 0;
+    for (let caso = 0; caso < 50; caso++) {
+      const nD = 1 + Math.floor(rnd() * 6), fs2 = [], verificado = {}, excepcionDeudor = {}, requiereComite = {};
+      for (let d = 0; d < nD; d++) {
+        const nom = "D" + d;
+        verificado[nom] = rnd() < 0.7; excepcionDeudor[nom] = rnd() < 0.3; requiereComite[nom] = rnd() < 0.4;
+        const nF = 1 + Math.floor(rnd() * 4);
+        for (let k = 0; k < nF; k++) fs2.push({ id: `d${d}f${k}`, deudor: nom, giro: Math.round(rnd() * 9e6) + 1000 });
+      }
+      const total = fs2.reduce((a, f) => a + f.giro, 0);
+      const r = asignarGiros({ facturas: fs2, verificado, excepcionDeudor, requiereComite, excepcionCliente: false, primeraOperacion: false, montoGirar: total });
+      if (!r.cuadra || r.filas.some((f) => !f.tipo)) malos++;
+      if (r.filas.some((f) => requiereComite[f.deudor] && f.tipo === "GE")) comiteEnGE++;
+    }
+    const oroOk = malos === 0 && comiteEnGE === 0;
+    ok("162 el resultado de líneas entra al giro: un deudor con facturas a comité califica Giro Normal aunque cumpla Express, sin comité deciden los cuatro hechos y la suma por tipo sigue siendo el monto a girar",
+       sinOk && conOk && catalogoOk && adaptadorOk && oroOk,
+       `sin comité = caso 78 ${sinOk} · D1 a comité → GN ${con.porTipo.GN.monto} / GE ${con.porTipo.GE.monto} ${conOk} · catálogo declara sinComite ${catalogoOk} · adaptador lee REQUIERE_COMITE de la versión ${adaptadorOk} · 50 carteras: ${malos} descuadres, ${comiteEnGE} a comité en Express ${oroOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

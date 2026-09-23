@@ -127,3 +127,23 @@ repositorios en `finally` (`repoSolicitudExc`, `repoPreEval` con `difundir=false
 
 **Documentos:** spec del curse (M-19 implementada, §15), gaps (G-12 cerrado: implementado), HU-25 vigente en CA-1/3/4
 (el chip «Operación creada» de CA-2 sigue por e2e, CP-065), CP-064/065/067 (caso 161), regla 62 y su fila, cifras.
+
+## 4 · ADR-0017 · El resultado de líneas entra al giro: con facturas a comité, Giro Normal (regla 63, caso 162)
+
+**Qué cambió.** Quinto hecho por deudor en `asignarGiros`, `sinComite`, declarado en `GIRO_HECHOS` y exigido por GE;
+entra por la entrada (`requiereComite`), como los otros cuatro, así que el motor sigue puro (el auditor de aislamiento
+no cambió su línea base). El adaptador `girosDeDeal` lo saca de las facturas `REQUIERE_COMITE` de la asignación de la
+última versión (`lineaDeVersion`), o de la asignación que le pasen (`est.linea`; `null` = ninguna). La firma del memo
+del tubo (`giroResumenDeal`) suma el número de versiones: el hecho se lee de la última, y sin eso la tarjeta habría
+seguido con el giro anterior — la misma trampa que ya costó la verificación (regla 22). El chip del deudor nombra la
+causa.
+
+**Lo que se decidió al escribir.** El hecho se nombra en POSITIVO (`sinComite`) como sus hermanos (`sinExcepcionDeudor`,
+`sinPrimeraOperacion`): GE exige que todos sean `true`, y un catálogo persistido que no lo pida seguiría calificando
+Express a un deudor a comité — no hay catálogo persistido hoy (`giroDeal` recibe `est.tiposGiro` y nadie lo pasa), así
+que no hubo migración que hacer. La dirección «sin comité» del caso 162 compara el resultado con el motor SIN el hecho
+(la misma entrada del caso 78): fija que el quinto hecho no se cuela en falso.
+
+**Documentos:** `spec-modelo-giro.md` (§2 GE con tres condiciones, §2.1, §6, §6.1), spec del curse (M-33 implementada),
+gaps (G-20 y G-34 cerrados), HU-37 vigente, CP-104/128 (caso 162; el chip en pantalla sigue por e2e), regla 63 y la 22
+ampliada, cifras.
