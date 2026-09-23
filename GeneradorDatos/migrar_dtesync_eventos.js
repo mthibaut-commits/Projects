@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 // MIGRACIÓN DEL A1 A FLUJO DE EVENTOS — de una fila por documento a una fila por notificación
-// (ADR-0020, regla 73; 23-09-2026)
+// (ADR-0020, regla 74; 23-09-2026)
 //
 //   node GeneradorDatos/migrar_dtesync_eventos.js [activo] [--dry]
 //

@@ -1,11 +1,9 @@
-/* Gate de contrato de la regla 71 (ADR-0013: UN evento de evaluación corre los cinco motores y emite una versión con
-   cinco secciones o ninguna; la primera simulación emite la v1; el pricing versiona el modo de tasa y las condiciones),
-   sobre el TEXTO del fuente. Lo que se puede llamar por nombre lo prueba el caso 168 (`evaluarOperacion`, `versionCompleta`,
-   `contarVersiones`, `snapVersionCli` con sus cinco secciones, el motor caído, el pricing, el comité, `reevaluarCliente`);
-   lo que la suite no alcanza son los closures de React: que «Simular la oferta» dispare el evento ANTES de escribir el
-   negocio, que «Re-evaluar operación» sea el mismo evento y la pestaña del detalle lo reciba, que no quede ningún emisor
-   de versión fuera del evento y del comité, que la regularización del origen la pida sólo la re-evaluación de la
-   simulación, y que el anuncio de un recálculo que no ocurre (G-09) no vuelva.
+/* Gate de contrato de la regla 71 (ADR-0018: la verificación fallida MARCA y AVISA, no retira; el ejecutivo retira,
+   re-simula y vuelve a publicar), sobre el TEXTO del fuente. Lo que se puede llamar por nombre lo prueba el caso 167
+   (`verifResumenDeal`, `issueVerificacion`, `filasVerificacion`, `avisarNoVerificadas`, el veto); lo que la suite no
+   alcanza son los closures de React: que los tres caminos de la mesa y el diálogo del detalle marquen en vez de retirar,
+   que `retirarFacturaOferta` ya no tenga la excepción «noConfirmada» ni emita versión, que el issue se vea en la cabecera
+   y en el tab, y que ninguna pantalla siga prometiendo el retiro.
 
    Con sonda negativa por pieza: un gate verde que no se comprueba en rojo no vigila nada. */
 import test from "node:test";
@@ -14,103 +12,77 @@ import { leer, canonico } from "./_comun.mjs";
 
 const jsx = leer("pipeline_comercial.jsx");
 
-const tramo = (can, desde, hasta, largo) => {
-  const i = can.indexOf(desde);
-  if (i < 0) return "";
-  const j = hasta ? can.indexOf(hasta, i) : -1;
-  return can.slice(i, j < 0 ? i + (largo || 4000) : j);
-};
-
 export function auditarRegla71(src) {
   const fallos = [];
   const can = canonico(src);
-  // 1 · La versión es la tupla de los cinco motores, y la emite UN evento que la rechaza a medias.
-  if (!can.includes('const MOTORES_VERSION = ["res", "verificacion", "linea", "giro", "pricing"];')) fallos.push("`MOTORES_VERSION` ya no nombra los cinco motores");
-  if (!can.includes("nRech, linea, verificacion, giro, pricing, motoresFallidos: fallidos, politica:")) fallos.push("`snapVersionCli` ya no devuelve las cinco secciones con los motores fallidos");
-  const ev = tramo(can, "function evaluarOperacion(deal, usuario, opts) {", "function reevaluarCliente(deal, usuario) {");
-  if (!ev) fallos.push("no existe `evaluarOperacion`: no hay evento de evaluación");
+  // 1 · UN solo escritor del veto, que no retira ni versiona.
+  const iM = can.indexOf("const marcarNoVerificada = (id, facs, gestion) => {");
+  const marca = iM < 0 ? "" : can.slice(iM, can.indexOf("const verificarDeudor = async (fila, confirmadas, llamada) => {", iM));
+  if (!marca) fallos.push("no existe `marcarNoVerificada`: la marca no tiene escritor propio");
   else {
-    const iRech = ev.indexOf("if (!versionCompleta(nv)) {");
-    const iPush = ev.indexOf("repoSimVersions.push(deal.id, nv);");
-    if (iRech < 0 || iPush < 0 || iPush < iRech) fallos.push("el evento emite sin comprobar que la versión esté completa: quedaría una versión a medias");
-    if (!/return \{ok: false, motivo: "motor_fallido"/.test(ev)) fallos.push("el evento no devuelve el rechazo por motor fallido");
-    if (!ev.includes("Evaluación fallida")) fallos.push("la evaluación fallida no queda escrita en la bitácora ni en la auditoría");
-    if ((ev.match(/repoSimVersions\.push\(/g) || []).length !== 1) fallos.push("el evento empuja más de una versión (o ninguna)");
+    if (!marca.includes("repoNoConfirmadas.set(id, nc);")) fallos.push("`marcarNoVerificada` no escribe el veto: la factura volvería a entrar (regla 6)");
+    if (!marca.includes("if (d0) avisarNoVerificadas(d0, fs, motivoLbl);")) fallos.push("`marcarNoVerificada` no avisa al ejecutivo comercial");
+    if (!marca.includes("logOtorgEvento(")) fallos.push("`marcarNoVerificada` no deja el evento en la bitácora con actor y hora");
+    if (/retirarFacturaOferta\(|repoSimVersions\.push\(|setDeals\(/.test(marca)) fallos.push("`marcarNoVerificada` RETIRA o VERSIONA: marcar no toca la oferta (ADR-0018)");
   }
-  // 2 · «Simular la oferta» ES el evento, antes de escribir el negocio; «Re-evaluar operación» es el mismo evento.
-  const sim = tramo(can, "const simularOferta = (id) => {", "const reevaluarOperacion = (id) => {");
-  if (!sim) fallos.push("no encuentro `simularOferta` seguido de `reevaluarOperacion`");
+  // 2 · Los tres caminos de la mesa marcan; ninguno retira con «noConfirmada».
+  if (!can.includes("if (no.length) marcarNoVerificada(fila.deal.id, no, llamada);")) fallos.push("`verificarDeudor` (confirmación parcial) no marca las no confirmadas");
+  if (!can.includes("marcarNoVerificada(fila.deal.id, [f], gestion);")) fallos.push("`marcarFactura` no marca el documento no confirmado");
+  if (!can.includes("marcarNoVerificada(fila.deal.id, fila.facturas, gestion);")) fallos.push("`noConfirmoDeudor` no marca las facturas del deudor");
+  if (can.includes('"noConfirmada")')) fallos.push("alguien vuelve a retirar con el motivo «noConfirmada»: la verificación no retira (ADR-0018)");
+  // 3 · `retirarFacturaOferta` sin excepción: la guarda de sólo lectura aplica siempre, y no recorta ni emite versión.
+  const iR = can.indexOf("const retirarFacturaOferta = (id, fac, motivo) => {");
+  const ret = iR < 0 ? "" : can.slice(iR, can.indexOf("const upd = (d) => {", iR));
+  if (!ret) fallos.push("no encuentro `retirarFacturaOferta`");
   else {
-    const iEv = sim.indexOf("if (d0) evaluarOperacion(");
-    const iSet = sim.indexOf("setDeals((prev) => prev.map(upd));");
-    if (iEv < 0 || iSet < 0 || iSet < iEv) fallos.push("simular no dispara el evento de evaluación antes de escribir el negocio (la v1 no se emite al simular)");
-    if (!sim.includes('origen: (repoSimVersions.get(id) || []).length ? "Re-evaluación de la operación (simulación)" : "Simulación de la oferta"')) fallos.push("la versión de la simulación no dice su origen");
-    if (!sim.includes('motivo: "simulacion"')) fallos.push("la versión de la simulación no lleva el motivo `simulacion`");
-    if (!sim.includes("simulado: true, stage: d0.stage === \"prospeccion\" ? \"oferta\" : d0.stage, monto: monto0, facturas: fs0.length, ...fin0")) fallos.push("el evento no evalúa el negocio tal como va a quedar simulado (etapa, monto, facturas y condiciones)");
+    if (!ret.includes("if (ofertaCerradaVigente(dRet)) {")) fallos.push("`retirarFacturaOferta` ya no comprueba la oferta cerrada");
+    if (/noConfirmada|repoNoConfirmadas\.set\(|repoSimVersions\.push\(|recortarAsignacion\(/.test(ret)) fallos.push("`retirarFacturaOferta` conserva la excepción de la verificación (veto, recorte o versión): la operación firmada volvería a encoger sin nueva firma");
   }
-  const reev = tramo(can, "const reevaluarOperacion = (id) => {", "const limpiarSimulacion = (id) => {");
-  if (!reev.includes('return evaluarOperacion(d0, usuario, {origen: "Re-evaluación de la operación", motivo: "reevaluacion"});')) fallos.push("«Re-evaluar operación» ya no es el evento de evaluación");
-  if (!can.includes("onEvaluar={reevaluarOperacion}")) fallos.push("la pestaña del detalle no recibe el evento (`onEvaluar`)");
-  const rl = tramo(can, "const reevaluarLinea = () => {", null, 400);
-  if (!rl.includes("if (onEvaluar) onEvaluar(deal.id);")) fallos.push("el botón «Re-evaluar operación» de la cabecera volvió a ser un spinner: no dispara el evento");
-  const rp = tramo(can, "onReevaluar={() => {", null, 200);
-  if (!rp.includes("if (onEvaluar) onEvaluar(deal.id);")) fallos.push("el aviso «La selección cambió» no dispara el evento al re-evaluar");
-  // 3 · Ningún emisor fuera del evento y del comité, y el comité emite una versión COMPLETA con la línea recortada.
-  const pushes = can.match(/repoSimVersions\.push\([^)]*\)/g) || [];
-  const permitidos = new Set(["repoSimVersions.push(deal.id, nv)", "repoSimVersions.push(id, dec.version)"]);
-  pushes.filter((p) => !permitidos.has(p)).forEach((p) => fallos.push(`emisor de versión fuera del evento y del comité: \`${p}\``));
-  if (pushes.length !== 2) fallos.push(`se esperaban exactamente dos emisores de versión (el evento y el comité), hay ${pushes.length}`);
-  if (!can.includes('snapVersionCli(dealTrasRetiro, vs.length, {linea: recortarAsignacion(prev.linea, quedan.map((f) => f.id)), origen, motivo: "comite_rechazo"})')) fallos.push("la versión del rechazo del comité no es la de los cinco motores sobre lo que queda con la línea recortada (regla 68)");
-  // 4 · La regularización del origen la pide SÓLO «Re-evaluación de la simulación», no cualquier versión con número > 1.
-  const snap = tramo(can, "function snapVersionCli(deal, rev, opts) {", "const nExc = res.filter(");
-  if (!snap.includes("if (o.origenActualizado) {")) fallos.push("la regularización de las variables ya no depende del gesto");
-  if (/if \(\(rev \|\| 0\) >= 1\) \{/.test(snap)) fallos.push("la regularización vuelve a dispararse por el número de versión: toda re-evaluación «arreglaría» el origen");
-  const rc = tramo(can, "function reevaluarCliente(deal, usuario) {", "const VISADO_NO_APLICA =");
-  if (!rc.includes('const r = evaluarOperacion(deal, usuario, {origenActualizado: true, origen: "Re-evaluación · JSON API actualizado tras firma", motivo: "reevaluacion_origen"});')) fallos.push("«Re-evaluación de la simulación» no pasa por el evento con el origen actualizado");
-  if (/snapVersionCli\(/.test(rc)) fallos.push("«Re-evaluación de la simulación» arma la versión por su cuenta en vez de disparar el evento");
-  // 5 · El giro y el pricing salen de los mismos cálculos que la pantalla, y el tab cuenta por motor.
-  if (!can.includes("giro = fsOp.length ? giroDeVersion(deal, fsOp, {linea}) : null;")) fallos.push("la versión no trae el giro sobre la asignación recién evaluada");
-  if (!can.includes("pricing = fsOp.length ? pricingDeVersion(deal, fsOp) : null;")) fallos.push("la versión no trae el pricing");
-  if (!can.includes("const val = giroDeVersion(deal, fs, estado);")) fallos.push("el giro del tubo ya no sale del mismo cálculo que la versión");
-  if (!can.includes("const tn = tasaDelNegocio(deal, tasaPondRiesgo, CFG_ACTIVA);")) fallos.push("la pantalla elige la tasa del negocio por su cuenta: lo que se muestra y lo que se versiona se separan");
-  if (!can.includes("const nMot = contarVersiones(shown);")) fallos.push("el tab Otorgamiento no cuenta las versiones por motor");
-  if (!can.includes('{shown.length} {shown.length === 1 ? "versión" : "versiones"} · {MOTORES_VERSION.length} motores')) fallos.push("el pill de versiones no dice cuántos motores (o vuelve a decir «versiónes»)");
-  // 7 · El tubo relee las versiones por el evento `storage` (la carrera con el postMessage está medida).
-  const st = tramo(can, "const onStorage = (e) => {", "window.addEventListener(\"storage\", onStorage);");
-  if (!st.includes('if (!e || e.key !== "pc_repo_" + repoSimVersions.nombre) return;') || !st.includes("repoSimVersions.recargar(); SIM_VERSIONS = repoSimVersions.all();")) fallos.push("el tubo no relee las versiones cuando otra pestaña las escribe: la fila leería una asignación anterior");
-  // 6 · G-09: el recálculo que no ocurre no se anuncia, y las facturas nuevas se dicen como lo que son.
-  if (/Recálculo aplicado|Recalculando |Se está recalculando la simulación|\bactualizando\b/.test(can)) fallos.push("vuelve el anuncio de un recálculo que no ocurre (G-09)");
-  if (!can.includes("Facturas nuevas para ${idsWarn.length} oportunidad(es): ${totalDocs} documento(s) al pool disponible")) fallos.push("la bitácora no dice que las facturas nuevas van al pool");
-  if (!can.includes("Facturas agregadas al pool en ${idsWarn.length} oportunidad(es)")) fallos.push("la bitácora no cierra la corrida diciendo lo que hizo");
+  // 4 · El detalle marca, no retira; el rótulo no promete el retiro.
+  if (!can.includes('etiquetaConfirmar="Marcar no verificada" onConfirmar={() => {onMarcarNoVerificada(deal.id, [confirmNoConf], null);')) fallos.push("el diálogo del tab Verificación del detalle no marca (o su rótulo sigue prometiendo retirar)");
+  if (!can.includes("onMarcarNoVerificada={marcarNoVerificada}")) fallos.push("`DealDrawer` no recibe `onMarcarNoVerificada`");
+  if (!can.includes("El deudor no confirmó · marcar")) fallos.push("el botón del tab Verificación no dice «marcar»");
+  if (/El deudor no confirmó · retirar|Retirar factura no confirmada/.test(can)) fallos.push("el detalle sigue prometiendo retirar al no confirmar");
+  // 5 · El issue existe y se ve: resumen, texto, cabecera, tab y VER-01.
+  if (!can.includes("noVerif: noVerificadas.length")) fallos.push("`verifResumenDeal` no cuenta las marcadas que siguen en la oferta");
+  if (!can.includes("function issueVerificacion(deal, estado) {")) fallos.push("no existe `issueVerificacion`: el issue no tiene una sola fuente");
+  if (!can.includes("No se puede cursar · {iss.n} no verificada(s)")) fallos.push("la cabecera del detalle no muestra el issue");
+  if (!can.includes("<b>{iss.titulo}.</b> {iss.texto}")) fallos.push("el tab Verificación no muestra el issue");
+  if (!can.includes("no cursa · {issTab.n}")) fallos.push("la cabecera del detalle (el tab Verificación) no marca el issue");
+  if (!can.includes("marcada(s) no verificada(s): el ejecutivo tiene que retirarlas, re-simular y volver a publicar")) fallos.push("VER-01 no nombra las marcadas ni dice qué hacer");
+  // 6 · El aviso: del sistema al ejecutivo, y calla sin marcadas.
+  const iA = can.indexOf("function avisarNoVerificadas(deal, facs, motivo) {");
+  const av = iA < 0 ? "" : can.slice(iA, can.indexOf("function excepcionesSinComentario(deal) {", iA));
+  if (!av) fallos.push("no existe `avisarNoVerificadas` de nivel módulo");
+  else {
+    if (!av.includes("if (!deal || !fs.length) return null;")) fallos.push("el aviso no calla sin facturas marcadas");
+    if (!av.includes("hiloEnviar(h, CODE_SISTEMA, texto, null);")) fallos.push("el aviso no lo firma el sistema");
+    if (!av.includes("const ejec = deal.exec && USERS[deal.exec] ? deal.exec : null;")) fallos.push("el aviso no va al ejecutivo dueño de la operación");
+  }
+  // 7 · La mesa no promete retirar y no duplica la marcada que sigue en la oferta.
+  if (/Retirar y vetar|se retira de la oferta y queda vetado|retira y veta todo/.test(can)) fallos.push("la mesa sigue prometiendo retirar al marcar");
+  if (!can.includes('"Marcar no verificada"}')) fallos.push("el pie del panel de la mesa no dice «Marcar no verificada»");
+  if (!can.includes(".filter(([id]) => !enOfertaIds.has(id))")) fallos.push("la mesa lista dos veces la marcada que sigue en la oferta");
   return fallos;
 }
 
-test("regla 71: un evento de evaluación corre los cinco motores y emite una versión con cinco secciones o ninguna; simular emite la v1; ningún emisor fuera del evento y del comité; el recálculo que no ocurre no se anuncia", () => {
+test("regla 71: la verificación fallida marca y avisa, no retira; el ejecutivo retira, re-simula y vuelve a publicar", () => {
   assert.deepEqual(auditarRegla71(jsx), []);
 });
 
 const MUTANTES = [
-  ["simular no evalúa", (c) => c.replace("if (d0) evaluarOperacion(", "if (false) evaluarOperacion(")],
-  ["simular evalúa DESPUÉS de escribir el negocio", (c) => {
-    const i = c.indexOf("if (d0) evaluarOperacion("); const j = c.indexOf("const upd = (d) => {", i);
-    const bloque = c.slice(i, j); const k = c.indexOf("setDeals((prev) => prev.map(upd));", j);
-    return c.slice(0, i) + c.slice(j, k) + "setDeals((prev) => prev.map(upd)); " + bloque + c.slice(k + "setDeals((prev) => prev.map(upd));".length);
-  }],
-  ["el evento emite a medias", (c) => c.replace("if (!versionCompleta(nv)) {", "if (false) {")],
-  ["el evento no dice que falló", (c) => c.replace("`Evaluación fallida · ${deal.id}: ${que}", "`Evaluación · ${deal.id}: ${que}").replace('accion: "Evaluación fallida"', 'accion: "Evaluación"')],
-  ["«Re-evaluar operación» vuelve a ser un spinner", (c) => c.replace("const reevaluarLinea = () => {setDetReeval(true); if (onEvaluar) onEvaluar(deal.id);", "const reevaluarLinea = () => {setDetReeval(true);")],
-  ["la pestaña no recibe el evento", (c) => c.replace("onEvaluar={reevaluarOperacion}", "")],
-  ["el aviso «La selección cambió» sólo se apaga", (c) => c.replace("onReevaluar={() => {if (onEvaluar) onEvaluar(deal.id);", "onReevaluar={() => {")],
-  ["un emisor literal fuera del evento", (c) => c.replace("const reabrirOperacion = (id) => {", "const reabrirOperacion = (id) => {repoSimVersions.push(id, {v: 9});")],
-  ["el comité re-asigna en vez de recortar", (c) => c.replace('snapVersionCli(dealTrasRetiro, vs.length, {linea: recortarAsignacion(prev.linea, quedan.map((f) => f.id)), origen, motivo: "comite_rechazo"})', 'snapVersionCli(dealTrasRetiro, vs.length, {origen, motivo: "comite_rechazo"})')],
-  ["la regularización vuelve a ser por número de versión", (c) => c.replace("if (o.origenActualizado) {", "if ((rev || 0) >= 1) {")],
-  ["la re-evaluación de la simulación arma la versión por su cuenta", (c) => c.replace('const r = evaluarOperacion(deal, usuario, {origenActualizado: true, origen: "Re-evaluación · JSON API actualizado tras firma", motivo: "reevaluacion_origen"});', 'const r = {version: snapVersionCli(deal, vs.length, {origenActualizado: true})}; repoSimVersions.push(deal.id, r.version);')],
-  ["la versión pierde el pricing", (c) => c.replace("nRech, linea, verificacion, giro, pricing, motoresFallidos: fallidos, politica:", "nRech, linea, verificacion, giro, motoresFallidos: fallidos, politica:")],
-  ["el giro de la versión no mira la asignación recién evaluada", (c) => c.replace("giro = fsOp.length ? giroDeVersion(deal, fsOp, {linea}) : null;", "giro = fsOp.length ? giroDeVersion(deal, fsOp, {}) : null;")],
-  ["la pantalla elige la tasa por su cuenta", (c) => c.replace("const tn = tasaDelNegocio(deal, tasaPondRiesgo, CFG_ACTIVA);", "const tn = {ultNeg: null, usaUltNeg: false, tasaEfectiva: tasaPondRiesgo};")],
-  ["el tab no cuenta por motor", (c) => c.replace("const nMot = contarVersiones(shown);", "const nMot = {};")],
-  ["el tubo no relee las versiones", (c) => c.replace("repoSimVersions.recargar(); SIM_VERSIONS = repoSimVersions.all();", "")],
-  ["la bitácora vuelve a anunciar el recálculo", (c) => c.replace("Facturas agregadas al pool en ${idsWarn.length} oportunidad(es)", "Recálculo aplicado en ${idsWarn.length} oportunidad(es)")],
+  ["la mesa vuelve a retirar al confirmar parcialmente", (c) => c.replace("if (no.length) marcarNoVerificada(fila.deal.id, no, llamada);", 'no.forEach((f) => retirarFacturaOferta(fila.deal.id, f, "noConfirmada"));')],
+  ["la marca retira", (c) => c.replace("repoNoConfirmadas.set(id, nc); const deudor = fs[0].deudor", "repoNoConfirmadas.set(id, nc); fs.forEach((f) => retirarFacturaOferta(id, f)); const deudor = fs[0].deudor")],
+  ["la marca no avisa", (c) => c.replace("if (d0) avisarNoVerificadas(d0, fs, motivoLbl);", "")],
+  ["el retiro recupera la excepción de la verificación", (c) => c.replace("const dRet = (dealsRef.current || []).find((x) => x.id === id); if (ofertaCerradaVigente(dRet)) {", 'const dRet = (dealsRef.current || []).find((x) => x.id === id); if (motivo !== "noConfirmada" && ofertaCerradaVigente(dRet)) {')],
+  ["el diálogo del detalle retira", (c) => c.replace('etiquetaConfirmar="Marcar no verificada" onConfirmar={() => {onMarcarNoVerificada(deal.id, [confirmNoConf], null);', 'etiquetaConfirmar="Retirar factura no confirmada" onConfirmar={() => {onRetirarFactura(deal.id, confirmNoConf, "noConfirmada");')],
+  ["la cabecera no muestra el issue", (c) => c.replace("No se puede cursar · {iss.n} no verificada(s)", "")],
+  ["el tab no muestra el issue", (c) => c.replace("<b>{iss.titulo}.</b> {iss.texto}", "")],
+  ["la cabecera del detalle calla", (c) => c.replace("no cursa · {issTab.n}", "")],
+  ["VER-01 calla", (c) => c.replace("marcada(s) no verificada(s): el ejecutivo tiene que retirarlas, re-simular y volver a publicar", "")],
+  ["el aviso lo firma el ejecutivo", (c) => c.replace("hiloEnviar(h, CODE_SISTEMA, texto, null); return h;} // Excepciones de la operación PENDIENTES", 'hiloEnviar(h, "CR", texto, null); return h;} // Excepciones de la operación PENDIENTES')],
+  ["la mesa vuelve a prometer retirar", (c) => c.replace('"Marcar no verificada"}', '"Retirar y vetar"}')],
+  ["la marcada se lista dos veces en la mesa", (c) => c.replace(".filter(([id]) => !enOfertaIds.has(id))", "")],
 ];
 for (const [nombre, mutar] of MUTANTES)
   test(`sonda negativa: ${nombre}`, () => {

@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-// EL A1 ES UN FLUJO DE EVENTOS POR DOCUMENTO (ADR-0020, regla 73; el usuario, 23-09-2026: «los eventos
+// EL A1 ES UN FLUJO DE EVENTOS POR DOCUMENTO (ADR-0020, regla 74; el usuario, 23-09-2026: «los eventos
 // de DTESync llegan varias veces para la misma factura: una vez se crea (notifica nueva factura), después
 // puede llegar nota de crédito, después aceptación»).
 //
@@ -19,7 +19,7 @@
 //   · `validarLog(log)`   → lo que un log tiene que cumplir para que `plegar` signifique algo: creación primero,
 //                           secuencias contiguas, fechas que no retroceden ni pasan la recepción del batch, el
 //                           log ordenado por fecha de notificación.
-// El pipeline pliega con la MISMA función, copiada en el fuente (`plegarDTE`): el gate `regla_73.test.mjs`
+// El pipeline pliega con la MISMA función, copiada en el fuente (`plegarDTE`): el gate `regla_74.test.mjs`
 // corre las dos sobre el mismo log y exige el mismo resultado.
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 const { semilla, ent } = require("./rng");

@@ -1,9 +1,9 @@
-/* Gate de contrato de la regla 70 (ADR-0018: la verificación fallida MARCA y AVISA, no retira; el ejecutivo retira,
-   re-simula y vuelve a publicar), sobre el TEXTO del fuente. Lo que se puede llamar por nombre lo prueba el caso 167
-   (`verifResumenDeal`, `issueVerificacion`, `filasVerificacion`, `avisarNoVerificadas`, el veto); lo que la suite no
-   alcanza son los closures de React: que los tres caminos de la mesa y el diálogo del detalle marquen en vez de retirar,
-   que `retirarFacturaOferta` ya no tenga la excepción «noConfirmada» ni emita versión, que el issue se vea en la cabecera
-   y en el tab, y que ninguna pantalla siga prometiendo el retiro.
+/* Gate de contrato de la regla 70 (ADR-0016: la excepción que la versión N ya no levanta se marca «ya no aplica desde
+   la versión N», no se borra; la marcada no se reactiva), sobre el TEXTO del fuente. La decisión pura y el flujo entero
+   los prueba el caso 166 (`excepcionesQueYaNoAplican`, `reevaluarCliente` —que desde la regla 72 pasa por
+   `evaluarOperacion`—, `solicitarAprobacionExc`); lo que la suite no
+   puede ver es que NINGÚN lector del visado —y hay doce, entre motor, tab, mesa, avisos y contadores— trate la marca como
+   una decisión, que la mutación no borre nada, y que el tab y la bandeja de tareas muestren el estado nuevo.
 
    Con sonda negativa por pieza: un gate verde que no se comprueba en rojo no vigila nada. */
 import test from "node:test";
@@ -15,74 +15,76 @@ const jsx = leer("pipeline_comercial.jsx");
 export function auditarRegla70(src) {
   const fallos = [];
   const can = canonico(src);
-  // 1 · UN solo escritor del veto, que no retira ni versiona.
-  const iM = can.indexOf("const marcarNoVerificada = (id, facs, gestion) => {");
-  const marca = iM < 0 ? "" : can.slice(iM, can.indexOf("const verificarDeudor = async (fila, confirmadas, llamada) => {", iM));
-  if (!marca) fallos.push("no existe `marcarNoVerificada`: la marca no tiene escritor propio");
+  // 1 · La re-evaluación marca DESPUÉS de emitir la versión, con el número de esa versión.
+  // Desde la regla 72 (ADR-0013) la versión la emite el EVENTO, `evaluarOperacion`, y ahí mismo se marca.
+  const iR = can.indexOf("function evaluarOperacion(deal, usuario, opts) {");
+  const reev = iR < 0 ? "" : can.slice(iR, iR + 3200);
+  const iPush = reev.indexOf("repoSimVersions.push(deal.id, nv);");
+  const iMarca = reev.indexOf("const yaNoAplican = marcarExcepcionesQueYaNoAplican(deal, nv.v);");
+  if (iPush < 0 || iMarca < 0 || iMarca < iPush) fallos.push("`evaluarOperacion` no marca lo que la versión nueva ya no levanta (después de emitirla y con su número)");
+  // 2 · La decisión es pura y SÓLO escribe la marca: nunca una decisión de apoderado.
+  const iD = can.indexOf("function excepcionesQueYaNoAplican(items, sol, st, det, version, fecha) {");
+  const dec = iD < 0 ? "" : can.slice(iD, can.indexOf("function marcarExcepcionesQueYaNoAplican(", iD));
+  if (!dec) fallos.push("no existe `excepcionesQueYaNoAplican`: la política de la marca tiene que ser pura para poder probarla");
   else {
-    if (!marca.includes("repoNoConfirmadas.set(id, nc);")) fallos.push("`marcarNoVerificada` no escribe el veto: la factura volvería a entrar (regla 6)");
-    if (!marca.includes("if (d0) avisarNoVerificadas(d0, fs, motivoLbl);")) fallos.push("`marcarNoVerificada` no avisa al ejecutivo comercial");
-    if (!marca.includes("logOtorgEvento(")) fallos.push("`marcarNoVerificada` no deja el evento en la bitácora con actor y hora");
-    if (/retirarFacturaOferta\(|repoSimVersions\.push\(|setDeals\(/.test(marca)) fallos.push("`marcarNoVerificada` RETIRA o VERSIONA: marcar no toca la oferta (ADR-0018)");
+    if (!dec.includes("if (levanta.has(k)) continue;")) fallos.push("la decisión marca también lo que SIGUE gatillando");
+    if (!dec.includes("if (!teniaSol && !teniaVis) continue;")) fallos.push("la decisión vuelve a marcar lo ya marcado");
+    if (!dec.includes("estado: VISADO_NO_APLICA, noAplica: marca")) fallos.push("la solicitud no queda marcada con `{desdeVersion, por, fecha}`");
+    if (!dec.includes("nSt[k] = VISADO_NO_APLICA;")) fallos.push("el visado no queda marcado `no_aplica`");
+    if (!dec.includes('por: "sistema"')) fallos.push("la marca no lleva al sistema como actor");
+    if (/"(aprobado|rechazado)"/.test(dec)) fallos.push("la decisión pura escribe una decisión de apoderado: el sistema no aprueba ni rechaza, marca");
   }
-  // 2 · Los tres caminos de la mesa marcan; ninguno retira con «noConfirmada».
-  if (!can.includes("if (no.length) marcarNoVerificada(fila.deal.id, no, llamada);")) fallos.push("`verificarDeudor` (confirmación parcial) no marca las no confirmadas");
-  if (!can.includes("marcarNoVerificada(fila.deal.id, [f], gestion);")) fallos.push("`marcarFactura` no marca el documento no confirmado");
-  if (!can.includes("marcarNoVerificada(fila.deal.id, fila.facturas, gestion);")) fallos.push("`noConfirmoDeudor` no marca las facturas del deudor");
-  if (can.includes('"noConfirmada")')) fallos.push("alguien vuelve a retirar con el motivo «noConfirmada»: la verificación no retira (ADR-0018)");
-  // 3 · `retirarFacturaOferta` sin excepción: la guarda de sólo lectura aplica siempre, y no recorta ni emite versión.
-  const iR = can.indexOf("const retirarFacturaOferta = (id, fac, motivo) => {");
-  const ret = iR < 0 ? "" : can.slice(iR, can.indexOf("const upd = (d) => {", iR));
-  if (!ret) fallos.push("no encuentro `retirarFacturaOferta`");
+  // 3 · La mutación escribe los tres registros, cierra la tarea con el motivo, avisa como el sistema, y NO borra.
+  const iM = can.indexOf("function marcarExcepcionesQueYaNoAplican(deal, version) {");
+  const mut = iM < 0 ? "" : can.slice(iM, can.indexOf("// ── Cache del visado", iM));
+  if (!mut) fallos.push("no existe `marcarExcepcionesQueYaNoAplican`: la decisión existiría y nadie la aplicaría");
   else {
-    if (!ret.includes("if (ofertaCerradaVigente(dRet)) {")) fallos.push("`retirarFacturaOferta` ya no comprueba la oferta cerrada");
-    if (/noConfirmada|repoNoConfirmadas\.set\(|repoSimVersions\.push\(|recortarAsignacion\(/.test(ret)) fallos.push("`retirarFacturaOferta` conserva la excepción de la verificación (veto, recorte o versión): la operación firmada volvería a encoger sin nueva firma");
+    if (!mut.includes("repoSolicitudExc.set(deal.id, r.sol); repoVisado.set(deal.id, r.st); repoVisadoDetalle.set(deal.id, r.det);")) fallos.push("la mutación no escribe los tres registros marcados");
+    if (/\bdelete\b|\.del\(/.test(mut)) fallos.push("la mutación BORRA: nada se borra, se marca (ADR-0016)");
+    if (!mut.includes('tt.cierre = {motivo: r.rotulo, por: "sistema", fecha};')) fallos.push("la tarea del aprobador no se cierra con el motivo «ya no aplica desde la versión N»");
+    if (!mut.includes("hiloEnviar(h, CODE_SISTEMA,")) fallos.push("el aviso en el hilo no lo firma el sistema");
+    if (!mut.includes('accion: "Excepción ya no aplica"')) fallos.push("no queda fila de auditoría");
+    if (!mut.includes("logOtorgEvento(deal.id, NOMBRE_SISTEMA,")) fallos.push("no queda evento en la bitácora de otorgamiento");
   }
-  // 4 · El detalle marca, no retira; el rótulo no promete el retiro.
-  if (!can.includes('etiquetaConfirmar="Marcar no verificada" onConfirmar={() => {onMarcarNoVerificada(deal.id, [confirmNoConf], null);')) fallos.push("el diálogo del tab Verificación del detalle no marca (o su rótulo sigue prometiendo retirar)");
-  if (!can.includes("onMarcarNoVerificada={marcarNoVerificada}")) fallos.push("`DealDrawer` no recibe `onMarcarNoVerificada`");
-  if (!can.includes("El deudor no confirmó · marcar")) fallos.push("el botón del tab Verificación no dice «marcar»");
-  if (/El deudor no confirmó · retirar|Retirar factura no confirmada/.test(can)) fallos.push("el detalle sigue prometiendo retirar al no confirmar");
-  // 5 · El issue existe y se ve: resumen, texto, cabecera, tab y VER-01.
-  if (!can.includes("noVerif: noVerificadas.length")) fallos.push("`verifResumenDeal` no cuenta las marcadas que siguen en la oferta");
-  if (!can.includes("function issueVerificacion(deal, estado) {")) fallos.push("no existe `issueVerificacion`: el issue no tiene una sola fuente");
-  if (!can.includes("No se puede cursar · {iss.n} no verificada(s)")) fallos.push("la cabecera del detalle no muestra el issue");
-  if (!can.includes("<b>{iss.titulo}.</b> {iss.texto}")) fallos.push("el tab Verificación no muestra el issue");
-  if (!can.includes("no cursa · {issTab.n}")) fallos.push("la cabecera del detalle (el tab Verificación) no marca el issue");
-  if (!can.includes("marcada(s) no verificada(s): el ejecutivo tiene que retirarlas, re-simular y volver a publicar")) fallos.push("VER-01 no nombra las marcadas ni dice qué hacer");
-  // 6 · El aviso: del sistema al ejecutivo, y calla sin marcadas.
-  const iA = can.indexOf("function avisarNoVerificadas(deal, facs, motivo) {");
-  const av = iA < 0 ? "" : can.slice(iA, can.indexOf("function excepcionesSinComentario(deal) {", iA));
-  if (!av) fallos.push("no existe `avisarNoVerificadas` de nivel módulo");
-  else {
-    if (!av.includes("if (!deal || !fs.length) return null;")) fallos.push("el aviso no calla sin facturas marcadas");
-    if (!av.includes("hiloEnviar(h, CODE_SISTEMA, texto, null);")) fallos.push("el aviso no lo firma el sistema");
-    if (!av.includes("const ejec = deal.exec && USERS[deal.exec] ? deal.exec : null;")) fallos.push("el aviso no va al ejecutivo dueño de la operación");
-  }
-  // 7 · La mesa no promete retirar y no duplica la marcada que sigue en la oferta.
-  if (/Retirar y vetar|se retira de la oferta y queda vetado|retira y veta todo/.test(can)) fallos.push("la mesa sigue prometiendo retirar al marcar");
-  if (!can.includes('"Marcar no verificada"}')) fallos.push("el pie del panel de la mesa no dice «Marcar no verificada»");
-  if (!can.includes(".filter(([id]) => !enOfertaIds.has(id))")) fallos.push("la mesa lista dos veces la marcada que sigue en la oferta");
+  // 4 · NINGÚN lector trata la marca como decisión: el motor, la compuerta del cierre, la mesa y los demás.
+  if (!can.includes("const excPend = exc.filter((e) => excSinVisar(st, e.stKey));")) fallos.push("`visadoDealCalc` cuenta la marca como decisión: la excepción que vuelve a levantar no saldría pendiente");
+  if (!can.includes("const s = solVigente(sol, it.stKey);")) fallos.push("`excepcionesSinComentario` deja que la solicitud marcada justifique la de hoy");
+  if (!can.includes('const ee = excSinVisar(VISADO_STATE[o.deal.id], x.stKey) ? "pendiente" : VISADO_STATE[o.deal.id][x.stKey];')) fallos.push("la mesa de Otorgamientos pinta la marca como si fuera una decisión");
+  const sueltos = can.match(/!(st|st0|stOp|visSt)\[[^\]]*\.stKey\]/g) || [];
+  if (sueltos.length) fallos.push(`quedan ${sueltos.length} lector(es) del visado con \`!st[x.stKey]\`: tratan la marca como decisión (${sueltos.join(", ")})`);
+  // 5 · La solicitud nueva no pisa ni reactiva la marcada; la tarea conoce su excepción.
+  if (!can.includes("previa && previa.estado === VISADO_NO_APLICA ? [...(previa.anteriores || []),")) fallos.push("`solicitarAprobacionExc` pisa la solicitud marcada en vez de llevarla como historia");
+  if (!can.includes("version: versionVigente(deal.id),")) fallos.push("la solicitud no anota en qué versión se pidió");
+  if (!can.includes('nodo: "Otorgamiento", stKey: x.stKey,')) fallos.push("la tarea de aprobación no conoce su excepción: no se puede cerrar cuando deja de aplicar");
+  // 6 · Se ve: el criterio cumplido muestra la excepción anterior con su estado, la huérfana tiene lista propia, el visado
+  //     nuevo hereda la historia y la tarea cerrada por el sistema dice por qué.
+  if (!can.includes('{x.disp !== "excepcion" && excepcionAnteriorBlock(x.stKey)}')) fallos.push("el tab Otorgamiento no muestra la excepción anterior en el criterio cumplido");
+  if (!can.includes("↺ Excepción anterior · {rotuloNoAplica(marca.desdeVersion)} · {marca.por} · {marca.fecha}")) fallos.push("la excepción anterior no dice «ya no aplica desde la versión N», actor y hora");
+  if (!can.includes("{huerfanasMarcadas.map((k) => (")) fallos.push("la excepción cuyo deudor salió de la operación no se muestra en ninguna parte");
+  if (!can.includes('{antRows.map((x) => reglaCard(x, active.key + "-ant-"))}')) fallos.push("el criterio cumplido con excepción anterior queda escondido en el colapsable de aprobadas: la marca no la ve nadie");
+  if ((can.match(/\.\.\.historiaVisado\(\(repoVisadoDetalle\.get\(deal\.id\) \|\| \{\}\)\[(x\.stKey|k)\]\)/g) || []).length !== 2) fallos.push("un visado nuevo pisa la historia del marcado (detalle o mesa)");
+  if (!can.includes("Cerrada por el {r.task.cierre.por} · {r.task.cierre.fecha}: {r.task.cierre.motivo}.")) fallos.push("la bandeja de Tareas no dice por qué el sistema cerró la tarea");
   return fallos;
 }
 
-test("regla 70: la verificación fallida marca y avisa, no retira; el ejecutivo retira, re-simula y vuelve a publicar", () => {
+test("regla 70: la excepción que la versión N ya no levanta se marca, no se borra; ningún lector trata la marca como decisión", () => {
   assert.deepEqual(auditarRegla70(jsx), []);
 });
 
 const MUTANTES = [
-  ["la mesa vuelve a retirar al confirmar parcialmente", (c) => c.replace("if (no.length) marcarNoVerificada(fila.deal.id, no, llamada);", 'no.forEach((f) => retirarFacturaOferta(fila.deal.id, f, "noConfirmada"));')],
-  ["la marca retira", (c) => c.replace("repoNoConfirmadas.set(id, nc); const deudor = fs[0].deudor", "repoNoConfirmadas.set(id, nc); fs.forEach((f) => retirarFacturaOferta(id, f)); const deudor = fs[0].deudor")],
-  ["la marca no avisa", (c) => c.replace("if (d0) avisarNoVerificadas(d0, fs, motivoLbl);", "")],
-  ["el retiro recupera la excepción de la verificación", (c) => c.replace("const dRet = (dealsRef.current || []).find((x) => x.id === id); if (ofertaCerradaVigente(dRet)) {", 'const dRet = (dealsRef.current || []).find((x) => x.id === id); if (motivo !== "noConfirmada" && ofertaCerradaVigente(dRet)) {')],
-  ["el diálogo del detalle retira", (c) => c.replace('etiquetaConfirmar="Marcar no verificada" onConfirmar={() => {onMarcarNoVerificada(deal.id, [confirmNoConf], null);', 'etiquetaConfirmar="Retirar factura no confirmada" onConfirmar={() => {onRetirarFactura(deal.id, confirmNoConf, "noConfirmada");')],
-  ["la cabecera no muestra el issue", (c) => c.replace("No se puede cursar · {iss.n} no verificada(s)", "")],
-  ["el tab no muestra el issue", (c) => c.replace("<b>{iss.titulo}.</b> {iss.texto}", "")],
-  ["la cabecera del detalle calla", (c) => c.replace("no cursa · {issTab.n}", "")],
-  ["VER-01 calla", (c) => c.replace("marcada(s) no verificada(s): el ejecutivo tiene que retirarlas, re-simular y volver a publicar", "")],
-  ["el aviso lo firma el ejecutivo", (c) => c.replace("hiloEnviar(h, CODE_SISTEMA, texto, null); return h;} // Excepciones de la operación PENDIENTES", 'hiloEnviar(h, "CR", texto, null); return h;} // Excepciones de la operación PENDIENTES')],
-  ["la mesa vuelve a prometer retirar", (c) => c.replace('"Marcar no verificada"}', '"Retirar y vetar"}')],
-  ["la marcada se lista dos veces en la mesa", (c) => c.replace(".filter(([id]) => !enOfertaIds.has(id))", "")],
+  ["la re-evaluación no marca", (c) => c.replace("const yaNoAplican = marcarExcepcionesQueYaNoAplican(deal, nv.v);", "const yaNoAplican = [];")],
+  ["la decisión pura aprueba en vez de marcar", (c) => c.replace("nSt[k] = VISADO_NO_APLICA;", 'nSt[k] = "aprobado";')],
+  ["la decisión marca lo que sigue gatillando", (c) => c.replace("if (levanta.has(k)) continue;", "")],
+  ["la mutación borra la solicitud", (c) => c.replace("repoSolicitudExc.set(deal.id, r.sol); repoVisado.set(deal.id, r.st);", "repoSolicitudExc.del(deal.id); repoVisado.set(deal.id, r.st);")],
+  ["la tarea no se cierra con el motivo", (c) => c.replace('tt.cierre = {motivo: r.rotulo, por: "sistema", fecha};', "")],
+  ["el aviso lo firma un ejecutivo", (c) => c.replace("hiloEnviar(h, CODE_SISTEMA,", 'hiloEnviar(h, "CR",')],
+  ["el motor cuenta la marca como decisión", (c) => c.replace("const excPend = exc.filter((e) => excSinVisar(st, e.stKey));", "const excPend = exc.filter((e) => !st[e.stKey]);")],
+  ["la solicitud marcada justifica la de hoy", (c) => c.replace("const s = solVigente(sol, it.stKey);", "const s = sol[it.stKey];")],
+  ["un lector suelto trata la marca como decisión", (c) => c.replace('const reqAprob = (x) => (x.disp === "excepcion" || x.disp === "rechazado") && excSinVisar(visSt, x.stKey);', 'const reqAprob = (x) => (x.disp === "excepcion" || x.disp === "rechazado") && !visSt[x.stKey];')],
+  ["la solicitud nueva pisa la marcada", (c) => c.replace("previa && previa.estado === VISADO_NO_APLICA ? [...(previa.anteriores || []),", "false ? [...(previa.anteriores || []),")],
+  ["el criterio cumplido no muestra la excepción anterior", (c) => c.replace('{x.disp !== "excepcion" && excepcionAnteriorBlock(x.stKey)}', "")],
+  ["la mesa pinta la marca como decisión", (c) => c.replace('const ee = excSinVisar(VISADO_STATE[o.deal.id], x.stKey) ? "pendiente" : VISADO_STATE[o.deal.id][x.stKey];', 'const ee = (VISADO_STATE[o.deal.id] || {})[x.stKey] || "pendiente";')],
+  ["la excepción anterior vuelve al colapsable de aprobadas", (c) => c.replace('{antRows.map((x) => reglaCard(x, active.key + "-ant-"))}', "")],
 ];
 for (const [nombre, mutar] of MUTANTES)
   test(`sonda negativa: ${nombre}`, () => {

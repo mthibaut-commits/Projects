@@ -33,13 +33,13 @@ en miles cada monto se cuantiza de a $1.000 y dos entran en criterios que DECIDE
 >
 > 1. **El backlog decidido, en rojo primero** (`Regresiones/Gaps_Proceso_Curse_2026-09-22.md` §2.2; los casos y su
 >    orden en `vault/specs/proceso-curse/casos_de_prueba.md`). **Hechos el 23-09** (regla, gate y `CASOS_ESPERADOS` en
->    cada commit): ADR-0013 (un evento, cinco versiones: regla 71, caso 168) · 0014 · 0015 · 0016 · 0017 · 0018 ·
+>    cada commit): ADR-0013 (un evento, cinco versiones: regla 72, caso 168) · 0014 · 0015 · 0016 · 0017 · 0018 ·
 >    0019 · antigüedad ≤20 días · corte y reinicio por hora · M-19 en `cerrarOferta` · M-01 (el acuse del DTE:
->    regla 72, caso 169; el A1 ya lo traía). **El backlog decidido del 22-09 quedó entero**: 18 gaps implementados
+>    regla 73, caso 169; el A1 ya lo traía). **El backlog decidido del 22-09 quedó entero**: 18 gaps implementados
 >    ([log](./2026-09-23_backlog_decidido.md) §1–§11), con sus pantallas en `28_version_v1.e2e.mjs`. **ADR-0020** (§12): el
->    A1 es un **flujo de eventos por documento** (regla 73, caso 170, `regla_73` + `dtesync.test.mjs`; activo migrado a 55.549
+>    A1 es un **flujo de eventos por documento** (regla 74, caso 170, `regla_74` + `dtesync.test.mjs`; activo migrado a 55.549
 >    eventos, 46 MB). **ADR-0021** (§13): sobre la oferta cerrada, publicada o firmada la NC, el reclamo o la cesión a otro
->    **inhabilitan el documento y dejan la operación no cursable** (regla 74, caso 171; el veto de la regla 70 escrito por el
+>    **inhabilitan el documento y dejan la operación no cursable** (regla 75, caso 171; el veto de la regla 71 escrito por el
 >    SII; el ejecutivo retira, re-evalúa y vuelve a firmar). Sin decisiones pendientes. Sigue: los T1 sin decisión previa
 >    (gaps §2.2: G-05, G-18, G-23 … G-28), cada uno con su caso en rojo.
 > 2. **UI y lo demás**: el selector de sesión 1/3 más angosto con elipsis (desborda a 1366 px) · el chip

@@ -1,4 +1,4 @@
-/* Gate de contrato de la regla 65 (ninguna excepción sin justificar en la MUTACIÓN de cierre; solicitar sin
+/* Gate de contrato de la regla 66 (ninguna excepción sin justificar en la MUTACIÓN de cierre; solicitar sin
    justificación no escribe), sobre el TEXTO del fuente. La compuerta es pura y la prueba el caso 161
    (`compuertaExcepcionesMudas`, `excepcionesSinComentario`, `solicitarAprobacionExc`); lo que la suite no puede ver es
    que `cerrarOferta` —un closure de `PipelineComercial`— la LLAME antes de escribir, y que la Pre-evaluación envíe
@@ -19,7 +19,7 @@ import { leer, canonico } from "./_comun.mjs";
 
 const jsx = leer("pipeline_comercial.jsx");
 
-export function auditarRegla65(src) {
+export function auditarRegla66(src) {
   const fallos = [];
   const can = canonico(src);
 
@@ -64,8 +64,8 @@ export function auditarRegla65(src) {
   return fallos;
 }
 
-test("regla 65: la mutación de cierre rechaza las excepciones sin justificar, solicitar sin justificación no escribe y la pre-evaluación declara", () => {
-  assert.deepEqual(auditarRegla65(jsx), []);
+test("regla 66: la mutación de cierre rechaza las excepciones sin justificar, solicitar sin justificación no escribe y la pre-evaluación declara", () => {
+  assert.deepEqual(auditarRegla66(jsx), []);
 });
 
 /* Cada mutante planta UNA violación sobre el texto canónico (`canonico` es idempotente) y el gate tiene que cazarla. */
@@ -81,5 +81,5 @@ for (const [nombre, mutar] of MUTANTES)
     const can = canonico(jsx);
     const mut = mutar(can);
     assert.notEqual(mut, can, "la sonda no plantó nada: el texto quedó igual");
-    assert.ok(auditarRegla65(mut).length > 0, "el gate no cazó la violación plantada");
+    assert.ok(auditarRegla66(mut).length > 0, "el gate no cazó la violación plantada");
   });

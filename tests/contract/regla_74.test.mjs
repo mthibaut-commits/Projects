@@ -1,15 +1,20 @@
-/* Gate de contrato de la regla 74 (ADR-0021: la NC, el reclamo o la cesión a otro sobre una oferta cerrada, publicada o
-   firmada INHABILITAN el documento y dejan la operación no cursable; el ejecutivo retira, re-evalúa y vuelve a publicar
-   para una nueva firma), sobre el TEXTO del fuente. Lo que se puede llamar por nombre lo prueba el caso 171
-   (`aplicarActualizacionDTE`, `aplicarEventosADeal`, `verifResumenDeal`, `issueVerificacion`, `controlesIntegracion`,
-   `estadoCandidata`, `avisarNoVerificadas`); lo que la suite no alcanza son los closures de React: que el tick escriba el
-   veto por el ÚNICO escritor (`marcarNoVerificada`, regla 70) y FUERA del updater, que ese escritor firme como el SII,
-   que la tarjeta del tubo, VER-01 y la fila de la oferta lo digan, y que el detalle abierto relea el veto que escribió
-   el tubo. Con sonda negativa por pieza. */
+/* Gate de contrato de la regla 74 (ADR-0020: el A1 es un flujo de eventos por documento), sobre el TEXTO del fuente.
+   Lo que se puede llamar por nombre lo prueba el caso 170 (`plegarDTE`, `documentosDTE`, `streamDesdeDTE`,
+   `aplicarActualizacionDTE`, `aplicarActualizacionAEvento`); lo que la suite no alcanza es lo que un nombre no dice:
+   que NADIE lea `window.DTESYNC` fuera del pliegue y del stream, que los ocho lectores pasen por `documentosDTE()`,
+   que el pliegue del fuente sea EL MISMO que el del generador (`GeneradorDatos/lib/dtesync.js`: acá se extrae la
+   función del fuente, se ejecuta en Node y se compara sobre el mismo log, ordenado y al revés), que el tick del
+   inbound enrute las actualizaciones antes de clasificar y no las cuente como facturas, que sobre la oferta cerrada
+   la NC o el reclamo dejen aviso sin tocar el documento, y que el contrato de datos declare el esquema 2 con los
+   tres campos del envoltorio. Con sonda negativa por pieza. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { leer, canonico } from "./_comun.mjs";
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { RAIZ, leer, canonico } from "./_comun.mjs";
 
+const require = createRequire(import.meta.url);
+const { plegar } = require(join(RAIZ, "GeneradorDatos/lib/dtesync.js"));
 const jsx = leer("pipeline_comercial.jsx");
 const tramo = (can, desde, hasta, largo) => {
   const i = can.indexOf(desde);
@@ -18,94 +23,139 @@ const tramo = (can, desde, hasta, largo) => {
   return can.slice(i, j < 0 ? i + (largo || 3000) : j);
 };
 
+/* El pliegue del fuente, extraído del TEXTO CRUDO (no del canónico: la función lleva un comentario de línea) y
+   ejecutado en Node. Devuelve null si no se encuentra o no compila. */
+export function plegarDelFuente(src) {
+  const ini = src.indexOf("function plegarDTE(eventos) {");
+  const fin = src.indexOf("let _DOCS_DTE = null;", ini);
+  if (ini < 0 || fin < 0) return null;
+  try {
+    return new Function(src.slice(ini, fin) + "\nreturn plegarDTE;")();
+  } catch {
+    return null;
+  }
+}
+
+/* Un log plantado con lo que puede pasar: dos emisores con el mismo folio, un documento con tres eventos, uno con
+   ninguno, una fila plana, y un evento sin identidad. */
+export const LOG_PLANTADO = () => {
+  const est = (x = {}) => ({ NotaCredito: null, FchNotaCredito: null, FolioNotaCredito: null, TipoDTERef: null, FolioDTERef: null, Aceptado: null, Reclamado: null, FchReclamo: null, FchRecepcion: "2026-06-23", FchAcuseRecibo: null, ...x });
+  const cre = (rut, folio, emis) => ({ RUTEmisor: rut, RznSoc: "R " + rut, TipoDTE: "33", TipoDTEDesc: "Factura electronica", Folio: folio, FchEmis: emis, FchVenc: "2026-08-01", RUTRecep: "96.1-2", RznSocRecep: "D", MntTotal: 1000 + folio, EnlaceXml: "x", EnlacePdf: "p", FormaPago: "2", EmitidoRecibido: 1, Origen: "sii", EstadoDTE: est(), Servicio: "DTESync", Notificacion: "DTE_SINCRONIZADO", FchNotificacion: emis, Secuencia: 1, Extras: null });
+  const act = (rut, folio, seq, fecha, x) => ({ RUTEmisor: rut, TipoDTE: "33", Folio: folio, EstadoDTE: est(x), Servicio: "DTESync", Notificacion: "DTE_ACTUALIZADO", FchNotificacion: fecha, Secuencia: seq, Extras: null });
+  return [
+    cre("1-9", 7, "2026-06-01"),
+    cre("2-7", 7, "2026-06-02"),
+    act("1-9", 7, 2, "2026-06-03", { Aceptado: "2", FchAcuseRecibo: "2026-06-03" }),
+    cre("1-9", 5, "2026-06-04"),
+    act("1-9", 7, 3, "2026-06-05", { Aceptado: "2", FchAcuseRecibo: "2026-06-03", NotaCredito: "1", FchNotaCredito: "2026-06-05", FolioNotaCredito: 500007 }),
+    { RUTEmisor: "3-5", RznSoc: "Plana", TipoDTE: "33", Folio: 9, FchEmis: "2026-06-06", MntTotal: 9, EstadoDTE: est({ Reclamado: "1", FchReclamo: "2026-06-08" }), Servicio: "DTESync", Notificacion: "DTE_SINCRONIZADO", Extras: null },
+    act("2-7", 7, 2, "2026-06-07", { Reclamado: "1", FchReclamo: "2026-06-07" }),
+    null,
+    { Folio: 11 },
+  ];
+};
+
 export function auditarRegla74(src) {
   const fallos = [];
   const can = canonico(src);
-  // 1 · La decisión pura: sobre la oferta cerrada el documento queda con su estado nuevo y marcado `inhabilitada`.
+  // 1 · `window.DTESYNC` se lee en DOS sentencias de código —el pliegue y el stream— y se nombra en un comentario;
+  //     nada más. Se quitan las dos sentencias del texto y lo que queda tiene que ser sólo el comentario.
+  const PLIEGUE = canonico('_DOCS_DTE = plegarDTE((typeof window !== "undefined" && Array.isArray(window.DTESYNC) && window.DTESYNC) || []);');
+  const STREAM = canonico('if (typeof window !== "undefined" && Array.isArray(window.DTESYNC) && window.DTESYNC.length) return sesgarACedentesConLinea(streamDesdeDTE(window.DTESYNC));');
+  if (!can.includes(PLIEGUE)) fallos.push("`documentosDTE` no pliega el log con `plegarDTE`");
+  if (!can.includes(STREAM)) fallos.push("el stream no recorre el log entero (`streamDesdeDTE(window.DTESYNC)`)");
+  const resto = (can.replace(PLIEGUE, "").replace(STREAM, "").match(/window\.DTESYNC/g) || []).length;
+  if (resto !== 1) fallos.push(`\`window.DTESYNC\` se lee en ${resto} sitio(s) fuera del pliegue y del stream (va sólo el comentario que lo explica); un lector nuevo del log tiene que pasar por documentosDTE()`);
+  // 2 · Los lectores pliegan: cada uno itera `documentosDTE()`.
+  const lectores = [
+    ["corteDTE", "function corteDTE() {", "const corteMs = "],
+    ["libroPorEmisor", "function libroPorEmisor() {", "for (const a of _libroEmisor.values())"],
+    ["OTRO_FOP_POR_CEDENTE", "const OTRO_FOP_POR_CEDENTE = (() => {", "// Cap por cedente"],
+    ["SENALES_CLIENTE", "const SENALES_CLIENTE = (() => {", "const senalesDe = "],
+    ["RUT_DEUDOR_POR_NOMBRE", "const RUT_DEUDOR_POR_NOMBRE = (() => {", "function apiVarsCliente("],
+    ["PC_CLIENTES", "const PC_CLIENTES = (() => {", "const vistos = new Map();"],
+    ["paresPorEmisor", "function paresPorEmisor() {", "for (const [rut, g] of m)"],
+  ];
+  for (const [nombre, desde, hasta] of lectores) {
+    const t = tramo(can, canonico(desde), canonico(hasta), 1500);
+    if (!t) fallos.push(`no encuentro \`${nombre}\``);
+    else if (!/documentosDTE\(\)/.test(t)) fallos.push(`\`${nombre}\` no lee los documentos plegados (documentosDTE())`);
+  }
+  // 3 · El pliegue del fuente es el del generador: mismo resultado sobre el mismo log, en orden y al revés.
+  const plegarDTE = plegarDelFuente(src);
+  if (!plegarDTE) fallos.push("no puedo extraer y ejecutar `plegarDTE` del fuente");
+  else {
+    const log = LOG_PLANTADO();
+    const a = JSON.stringify(plegarDTE(log)), b = JSON.stringify(plegar(log));
+    if (a !== b) fallos.push("`plegarDTE` (fuente) y `plegar` (GeneradorDatos/lib/dtesync.js) pliegan distinto el mismo log");
+    const r = [...log].reverse();
+    if (JSON.stringify(plegarDTE(r)) !== a) fallos.push("`plegarDTE` depende del orden de llegada: un evento atrasado pisa uno más nuevo");
+    if (plegarDTE(log).length !== 4) fallos.push("`plegarDTE` no deja un documento por (emisor, folio)");
+  }
+  // 4 · El stream separa la actualización de la factura nueva.
+  const st = tramo(can, canonico("function streamDesdeDTE(dte) {"), canonico("const fac = facturaDeDTE(r);"), 600);
+  if (!st.includes(canonico('if ((+r.Secuencia || 1) > 1 && !("FchEmis" in r)) { out.push(eventoActualizacionDTE(r, i)); continue; }'))) fallos.push("`streamDesdeDTE` trata una actualización como factura nueva, o un documento plegado como actualización");
+  const ea = tramo(can, canonico("function eventoActualizacionDTE(r, i) {"), canonico("const glosaCambioDTE = "), 1200);
+  if (!ea.includes(canonico("const est = estadoDeDTE(r.EstadoDTE || {});")) || !ea.includes('tipo: "actualizacion"')) fallos.push("`eventoActualizacionDTE` no lee el estado con `estadoDeDTE` o no se marca como actualización");
+  const fd = tramo(can, canonico("function facturaDeDTE(r) {"), canonico("function estadoDeDTE(est) {"), 2500);
+  if (!fd.includes(canonico("...estadoDeDTE(est),")) || !fd.includes(canonico("secuenciaDTE: +r.Secuencia || 1,"))) fallos.push("`facturaDeDTE` no lee el estado por `estadoDeDTE` o no lleva la secuencia del A1");
+  // 5 · El tick enruta antes de clasificar y no cuenta las actualizaciones como facturas.
+  const tk = tramo(can, canonico("const lote = streamQueue.slice(0, STREAM_LOTE);"), canonico("}, 350);"), 6000);
+  if (!tk) fallos.push("no encuentro el tick del stream");
+  else {
+    const iAct = tk.indexOf(canonico('const actualizaciones = lote.filter((e) => e && e.tipo === "actualizacion");'));
+    const iFor = tk.indexOf(canonico("for (const f of facturas) {"));
+    if (iAct < 0 || iFor < 0 || iAct > iFor) fallos.push("el tick clasifica las actualizaciones del A1 como facturas (no las separa antes del bucle)");
+    if (!tk.includes(canonico("if (actualizaciones.length) aplicarActualizacionesDTE(actualizaciones);"))) fallos.push("el tick no aplica las actualizaciones");
+    if (!tk.includes(canonico("setRecibidas((n) => n + facturas.length);"))) fallos.push("«facturas recibidas» cuenta eventos y no documentos");
+    if (/for \(const f of lote\)/.test(tk)) fallos.push("el bucle de clasificación recorre el lote entero, actualizaciones incluidas");
+  }
+  // 6 · Sobre la oferta cerrada, la NC o el reclamo se aplican Y la inhabilitan (regla 75 fija el resto).
   const ap = tramo(can, canonico("function aplicarActualizacionDTE(deal, ev) {"), canonico("function aplicarEventosADeal("), 5000);
   if (!ap) fallos.push("no encuentro `aplicarActualizacionDTE`");
   else {
-    if (!ap.includes(canonico("const bloquea = !!(ev.estado && (ev.estado.notaCredito || ev.estado.reclamada || ev.estado.cedida));"))) fallos.push("la NC, el reclamo y la cesión a otro no son los tres motivos que inhabilitan");
-    if (!ap.includes(canonico("const marcado = { ...nf, inhabilitada: { motivo: ev.cambio, glosa: glosaCambioDTE(ev), secuencia: ev.secuencia, fecha: ev.fchNotificacion || null } };"))) fallos.push("sobre la oferta cerrada el documento no queda marcado `inhabilitada` con su motivo, su glosa y su secuencia");
-    if (!ap.includes(canonico('cambio = { donde: "inhabilitada", folio: ev.folio, cambio: ev.cambio, factura: marcado };'))) fallos.push("la decisión no devuelve el documento inhabilitado: el tick no tendría con qué escribir el veto");
-    if (!ap.includes("queda inhabilitado y la operación no se cursa")) fallos.push("la traza de la inhabilitación no dice que la operación no se cursa");
-    if (/avisoDTE/.test(ap)) fallos.push("la oferta cerrada vuelve a recibir sólo un aviso (`avisoDTE`) en vez de la inhabilitación");
+    if (!ap.includes(canonico("if (bloquea && paqueteCerrado) {"))) fallos.push("`aplicarActualizacionDTE` no distingue la oferta cerrada");
+    if (!ap.includes(canonico("inhabilitada: { motivo: ev.cambio, glosa: glosaCambioDTE(ev), secuencia: ev.secuencia, fecha: ev.fchNotificacion || null }"))) fallos.push("sobre la oferta cerrada el documento no queda marcado `inhabilitada` con su secuencia (se repetiría en cada re-entrega)");
+    if (!ap.includes("queda inhabilitado y la operación no se cursa")) fallos.push("la traza de la inhabilitación perdió su texto");
+    if (!ap.includes(canonico("const paqueteCerrado = ofertaCerradaVigente(deal) || ofertaPublicada(deal) ||"))) fallos.push("«paquete cerrado» no mira el cierre, la publicación y las etapas posteriores a la firma");
   }
-  // 2 · El tick escribe el veto por el único escritor y FUERA del updater.
-  const tk = tramo(can, canonico("const aplicarActualizacionesDTE = (acts) => {"), canonico("setSelected((s) => (s ? aplicarEventosADeal(s, evs).deal : s));"), 4000);
-  if (!tk) fallos.push("no encuentro `aplicarActualizacionesDTE`");
-  else {
-    const iVeto = tk.indexOf(canonico('marcarNoVerificada(d.id, facs, { origen: "sii", motivoLbl:'));
-    const iUpd = tk.indexOf(canonico("setDeals((prev) => {"));
-    if (iVeto < 0) fallos.push("el tick no escribe el veto del SII por `marcarNoVerificada` (regla 70: un solo escritor)");
-    else if (iUpd < 0 || iVeto > iUpd) fallos.push("el tick escribe el veto dentro del updater de `setDeals` (regla 22: un updater puede correr dos veces)");
-    if (!tk.includes(canonico("for (const d of dealsRef.current || []) {"))) fallos.push("las inhabilitaciones no se deciden sobre la foto vigente del tubo");
-  }
-  if ((can.match(/repoNoConfirmadas\.set\(/g) || []).length !== 1) fallos.push("el veto tiene más de un escritor (o ninguno): la regla 70 exige uno solo");
-  // 3 · El escritor firma como el SII y anota el origen.
-  const mk = tramo(can, canonico("const marcarNoVerificada = (id, facs, gestion) => {"), canonico("const verificarDeudor = async (fila, confirmadas, llamada) => {"), 4000);
-  if (!mk) fallos.push("no encuentro `marcarNoVerificada`");
-  else {
-    if (!mk.includes(canonico('const porSII = !!(gestion && gestion.origen === "sii");'))) fallos.push("`marcarNoVerificada` no distingue el origen «sii»");
-    if (!mk.includes(canonico("por: porSII ? ACTOR_SII : actorEtiqueta(usuario),"))) fallos.push("el veto del SII queda firmado por el usuario de la sesión y no por el servicio");
-    if (!mk.includes(canonico('origen: "sii"'))) fallos.push("el veto del SII no anota su origen: la candidata y el issue no podrían decir por qué");
-    if (!mk.includes("inhabilitó")) fallos.push("la bitácora de otorgamiento no dice que el SII inhabilitó el documento");
-  }
-  // 4 · El resumen cuenta el documento vetado como pendiente aunque la llamada esté en verde, y nombra el origen.
-  const vr = tramo(can, canonico("function verifResumenDeal(deal, estado) {"), canonico("function issueVerificacion(deal, estado) {"), 3000);
-  if (!vr) fallos.push("no encuentro `verifResumenDeal`");
-  else {
-    const iVet = vr.indexOf(canonico("if (noConfirmada(deal, f, estado && estado.vetadas)) { tel++; pend++; return; }"));
-    const iVf = vr.indexOf(canonico("const vf = verifFactura(f, deal, estado);"));
-    if (iVet < 0 || iVf < 0 || iVet > iVf) fallos.push("`verifResumenDeal` no cuenta el documento vetado como pendiente antes de mirar la llamada: con la llamada en verde, VER-01 dejaría cursar un documento que el deudor no va a pagar");
-    if (!vr.includes(canonico('sii: noVerificadas.filter((x) => x.origen === "sii").length'))) fallos.push("`verifResumenDeal` no cuenta las vetadas por el SII");
-  }
-  // 5 · El issue, la candidata, el aviso, VER-01, la tarjeta y la fila lo dicen.
-  const iss = tramo(can, canonico("function issueVerificacion(deal, estado) {"), "// ── MESA DE VERIFICACIÓN", 3500);
-  if (!iss.includes('"Documentos inhabilitados por el SII: no se puede cursar"') || !iss.includes('"Facturas no verificadas e inhabilitadas por el SII: no se puede cursar"')) fallos.push("`issueVerificacion` no titula lo que el SII inhabilitó");
-  if (!iss.includes("documento(s) inhabilitado(s) por el SII:")) fallos.push("`issueVerificacion` no nombra aparte los documentos inhabilitados con su motivo");
-  const ec = tramo(can, canonico("function estadoCandidata(f, deal, estado) {"), canonico("function cesionDeFactura("), 3000);
-  if (!ec.includes(canonico('R("inhabilitada", "Inhabilitada por el SII",'))) fallos.push("`estadoCandidata` no etiqueta la inhabilitada por el SII");
-  if (!ec.includes(canonico("const veto = vetoDe(deal, f, estado && estado.vetadas);"))) fallos.push("`estadoCandidata` no lee la entrada del veto (no sabría quién lo escribió)");
-  const av = tramo(can, canonico("function avisarNoVerificadas(deal, facs, motivo) {"), canonico("function excepcionesSinComentario(deal) {"), 3000);
-  if (!av.includes("Documentos inhabilitados por el SII · ${deal.id}")) fallos.push("el aviso al ejecutivo no lleva el asunto del SII");
-  if (!av.includes("no va a pagar")) fallos.push("el aviso no dice por qué el documento está inhabilitado");
-  if (!can.includes("inhabilitada(s) por el SII: reclamo, nota de crédito o cesión a otro, regla 74")) fallos.push("VER-01 no nombra las inhabilitadas por el SII");
-  if (!can.includes(canonico("No se puede cursar · {iss.n} no verificada(s){iss.sii ? ` · ${iss.sii} por el SII` : \"\"}"))) fallos.push("la tarjeta del tubo no dice cuántas inhabilitó el SII");
-  if (!can.includes(canonico("if (f && f.inhabilitada) return `Inhabilitada por el SII · ${f.inhabilitada.glosa}`;"))) fallos.push("la fila de la oferta no rotula el documento inhabilitado con su motivo");
-  // 6 · El detalle abierto relee el veto que escribió el tubo.
-  const st = tramo(can, canonico("const onStorageVeto = (e) => {"), canonico("const onStorage = (e) => {"), 600);
-  if (!st.includes(canonico('if (!e || e.key !== "pc_repo_" + repoNoConfirmadas.nombre) return;')) || !st.includes(canonico("repoNoConfirmadas.recargar(); NO_CONFIRMADAS = repoNoConfirmadas.all();"))) fallos.push("el detalle no relee el veto cuando otra pestaña lo escribe");
-  if (!can.includes(canonico('window.addEventListener("storage", onStorageVeto);'))) fallos.push("el oyente del veto no está registrado");
+  // 7 · El contrato de datos: esquema 2 con el envoltorio del evento.
+  const ct = tramo(can, canonico('coleccion: "DTESYNC",'), canonico('coleccion: "AECSYNC"'), 500);
+  if (!ct.includes("esquema: 2") || !/"Notificacion", "FchNotificacion", "Secuencia"/.test(ct)) fallos.push("`CONTRATOS_DATOS` no declara el A1 como flujo de eventos (esquema 2 con Notificacion, FchNotificacion y Secuencia)");
   return fallos;
 }
 
-test("regla 74: sobre la oferta cerrada, publicada o firmada la NC, el reclamo o la cesión a otro inhabilitan el documento; el veto lo escribe el SII por el único escritor, cuenta como pendiente aunque la llamada esté en verde, y el issue, VER-01, la candidata, el aviso, la tarjeta y la fila lo dicen", () => {
+test("regla 74: el A1 es un flujo de eventos que se pliega en un solo sitio, con el mismo pliegue que el generador; el stream y el tick separan las actualizaciones; la oferta cerrada distingue la inhabilitación", () => {
   assert.deepEqual(auditarRegla74(jsx), []);
 });
 
+/* Las sondas se plantan sobre el texto CRUDO (la función extraída lleva un comentario de línea, y `canonico` la
+   rompería); `auditarRegla74` canoniza por dentro. */
 const MUTANTES = [
-  ["la cesión a otro deja de inhabilitar", (c) => c.replace("const bloquea = !!(ev.estado && (ev.estado.notaCredito || ev.estado.reclamada || ev.estado.cedida));", "const bloquea = !!(ev.estado && (ev.estado.notaCredito || ev.estado.reclamada));")],
-  ["la oferta cerrada no marca la inhabilitación", (c) => c.replace("const marcado = {...nf, inhabilitada: {motivo: ev.cambio,", "const marcado = {...nf, marca: {motivo: ev.cambio,")],
-  ["la decisión no devuelve el documento", (c) => c.replace('cambio = {donde: "inhabilitada", folio: ev.folio, cambio: ev.cambio, factura: marcado};', 'cambio = {donde: "inhabilitada", folio: ev.folio, cambio: ev.cambio};')],
-  ["la traza calla", (c) => c.replace("queda inhabilitado y la operación no se cursa", "queda anotado")],
-  ["el tick no escribe el veto", (c) => c.replace('marcarNoVerificada(d.id, facs, {origen: "sii", motivoLbl:', 'console.log(d.id, facs, {origen: "sii", motivoLbl:')],
-  ["el tick escribe el veto dentro del updater", (c) => c.replace("for (const d of dealsRef.current || []) {", "for (const d of []) {").replace("setDeals((prev) => {let toco = false; const out = prev.map((d) => {const r = aplicarEventosADeal(d, evs); if (r.deal !== d) toco = true; return r.deal;});", 'setDeals((prev) => {let toco = false; const out = prev.map((d) => {const r = aplicarEventosADeal(d, evs); if (r.inhabilitadas.length) marcarNoVerificada(d.id, r.inhabilitadas.map((x) => x.factura), {origen: "sii", motivoLbl: "x"}); if (r.deal !== d) toco = true; return r.deal;});')],
-  ["el escritor firma como el usuario", (c) => c.replace("por: porSII ? ACTOR_SII : actorEtiqueta(usuario),", "por: actorEtiqueta(usuario),")],
-  ["el escritor no anota el origen", (c) => c.replace('...(porSII ? {origen: "sii", cambio: (fac.inhabilitada && fac.inhabilitada.motivo) || null} : {})', "...{}")],
-  ["un segundo escritor del veto", (c) => c.replace("repoNoConfirmadas.recargar(); NO_CONFIRMADAS = repoNoConfirmadas.all();", "repoNoConfirmadas.set(id, {}); NO_CONFIRMADAS = repoNoConfirmadas.all();")],
-  ["el resumen deja cursar con la llamada en verde", (c) => c.replace("if (noConfirmada(deal, f, estado && estado.vetadas)) {tel++; pend++; return;}", "")],
-  ["el issue no titula lo del SII", (c) => c.replace('"Documentos inhabilitados por el SII: no se puede cursar"', '"Facturas no verificadas: no se puede cursar"')],
-  ["la candidata no dice por qué", (c) => c.replace('R("inhabilitada", "Inhabilitada por el SII",', 'R("noConfirmada", "El deudor no la confirmó",')],
-  ["el aviso pierde el asunto del SII", (c) => c.replace("Documentos inhabilitados por el SII · ${deal.id}", "Verificación fallida · ${deal.id}")],
-  ["VER-01 calla", (c) => c.replace("inhabilitada(s) por el SII: reclamo, nota de crédito o cesión a otro, regla 74", "")],
-  ["la fila de la oferta no rotula", (c) => c.replace("if (f && f.inhabilitada) return `Inhabilitada por el SII · ${f.inhabilitada.glosa}`;", "")],
-  ["el detalle no relee el veto", (c) => c.replace('window.addEventListener("storage", onStorageVeto);', "")],
+  ["un lector vuelve a leer el log directo", (s) => s.replace("  _libroEmisor = new Map();\n  for (const r of documentosDTE()) {", '  _libroEmisor = new Map();\n  for (const r of (typeof window !== "undefined" && Array.isArray(window.DTESYNC) ? window.DTESYNC : [])) {')],
+  ["el pliegue deja ganar al evento atrasado", (s) => s.replace("(+e.Secuencia || 1) >= (+prev.Secuencia || 1) ? { ...prev, ...e } : { ...e, ...prev }", "{ ...prev, ...e }")],
+  ["el pliegue pierde documentos (clave sólo por folio)", (s) => s.replace('const k = e.RUTEmisor + "|" + e.Folio;\n    const prev = docs.get(k);', "const k = String(e.Folio);\n    const prev = docs.get(k);")],
+  ["el stream trata la actualización como factura nueva", (s) => s.replace('    if ((+r.Secuencia || 1) > 1 && !("FchEmis" in r)) {\n      out.push(eventoActualizacionDTE(r, i));\n      continue;\n    }\n    const fac = facturaDeDTE(r);', "    const fac = facturaDeDTE(r);")],
+  ["el stream trata un documento plegado como actualización", (s) => s.replace('if ((+r.Secuencia || 1) > 1 && !("FchEmis" in r)) {', "if ((+r.Secuencia || 1) > 1) {")],
+  ["el tick clasifica las actualizaciones", (s) => s.replace("      for (const f of facturas) {\n        const ds = deudorStatsRef.current;", "      for (const f of lote) {\n        const ds = deudorStatsRef.current;")],
+  ["el tick no aplica las actualizaciones", (s) => s.replace("      if (actualizaciones.length) aplicarActualizacionesDTE(actualizaciones);\n", "")],
+  ["«recibidas» cuenta eventos", (s) => s.replace("setRecibidas((n) => n + facturas.length);", "setRecibidas((n) => n + lote.length);")],
+  ["la oferta cerrada se parcha igual", (s) => s.replace("    if (bloquea && paqueteCerrado) {", "    if (false) {")],
+  ["la inhabilitación no queda marcada y se repetiría", (s) => s.replace("const marcado = { ...nf, inhabilitada: {", "const marcado = { ...nf, marca: {")],
+  ["facturaDeDTE deja de leer el estado por estadoDeDTE", (s) => s.replace("    ...estadoDeDTE(est),\n", '    reclamada: est.Reclamado === "1",\n')],
+  ["el contrato vuelve al esquema 1", (s) => s.replace('    coleccion: "DTESYNC",\n    esquema: 2,', '    coleccion: "DTESYNC",\n    esquema: 1,')],
 ];
 for (const [nombre, mutar] of MUTANTES)
   test(`sonda negativa: ${nombre}`, () => {
-    const can = canonico(jsx);
-    const mut = mutar(can);
-    assert.notEqual(mut, can, "la sonda no cambió el fuente: el ancla ya no existe");
+    const mut = mutar(jsx);
+    assert.notEqual(mut, jsx, "la sonda no cambió el fuente: el ancla ya no existe");
     assert.ok(auditarRegla74(mut).length > 0, "el gate no cazó la violación plantada");
   });
+
+test("sonda negativa: el pliegue del fuente y el del generador se comparan de verdad (un log distinto da otro resultado)", () => {
+  const plegarDTE = plegarDelFuente(jsx);
+  assert.ok(plegarDTE, "no se pudo extraer plegarDTE");
+  const log = LOG_PLANTADO();
+  assert.equal(JSON.stringify(plegarDTE(log)), JSON.stringify(plegar(log)));
+  assert.notEqual(JSON.stringify(plegarDTE(log.slice(0, 3))), JSON.stringify(plegar(log)));
+});

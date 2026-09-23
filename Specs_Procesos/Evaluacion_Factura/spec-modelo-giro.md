@@ -27,12 +27,12 @@ simulación → monto a girar → prorrateo por factura → ASIGNACIÓN DE GIROS
 
 | Código | Tipo | Califica |
 |---|---|---|
-| **GE** | Giro Express | La verificación la dio por **no necesaria** **y** el otorgamiento **no** dejó marcas de excepción — ni del cliente ni del deudor — **y** la asignación de líneas cubrió sus facturas: ninguna a comité (ADR-0017, regla 66) |
+| **GE** | Giro Express | La verificación la dio por **no necesaria** **y** el otorgamiento **no** dejó marcas de excepción — ni del cliente ni del deudor — **y** la asignación de líneas cubrió sus facturas: ninguna a comité (ADR-0017, regla 67) |
 | **GN** | Giro Normal | Todo lo demás |
 
 **Express exige las tres condiciones a la vez; basta que falle una para caer en Normal.** Eso incluye
 la factura verificada cuyo deudor arrastra una excepción, la factura sin excepciones cuyo deudor
-quedó por verificar, y —desde el 23-09-2026 (ADR-0017, regla 66)— la factura de un deudor cuyas
+quedó por verificar, y —desde el 23-09-2026 (ADR-0017, regla 67)— la factura de un deudor cuyas
 facturas requieren comité porque la línea no las cubre: la operación depende de una línea que todavía
 no existe, así que no gira por la vía rápida aunque cumpla lo demás.
 

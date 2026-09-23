@@ -1,4 +1,4 @@
-/* Gate de contrato de la regla 63 (la factura cedida a un factoring AJENO no es candidata del inbound; la cedida a
+/* Gate de contrato de la regla 64 (la factura cedida a un factoring AJENO no es candidata del inbound; la cedida a
    Security sí, y entra), sobre el TEXTO del fuente. La mitad de la regla tiene función pura y la prueba el caso 159
    (`cedidaAFactoringAjeno`, `CRITERIO_PRED`, `estadoCandidata`); la otra mitad vive en un closure del detalle
    —`motivoExcl`, lo que deja una factura de la oferta fuera del negocio— y la suite no monta componentes, así que
@@ -18,7 +18,7 @@ import { leer, canonico } from "./_comun.mjs";
 
 const jsx = leer("pipeline_comercial.jsx");
 
-export function auditarRegla63(src) {
+export function auditarRegla64(src) {
   const fallos = [];
   const can = canonico(src);
 
@@ -52,8 +52,8 @@ export function auditarRegla63(src) {
   return fallos;
 }
 
-test("regla 63: la cedida a un factoring ajeno no es candidata; la cedida a Security es agregable y la oferta la cuenta", () => {
-  assert.deepEqual(auditarRegla63(jsx), []);
+test("regla 64: la cedida a un factoring ajeno no es candidata; la cedida a Security es agregable y la oferta la cuenta", () => {
+  assert.deepEqual(auditarRegla64(jsx), []);
 });
 
 /* Cada mutante planta UNA violación sobre el texto canónico (`canonico` es idempotente) y el gate tiene que cazarla. */
@@ -69,5 +69,5 @@ for (const [nombre, mutar] of MUTANTES)
     const can = canonico(jsx);
     const mut = mutar(can);
     assert.notEqual(mut, can, "la sonda no plantó nada: el texto quedó igual");
-    assert.ok(auditarRegla63(mut).length > 0, "el gate no cazó la violación plantada");
+    assert.ok(auditarRegla64(mut).length > 0, "el gate no cazó la violación plantada");
   });

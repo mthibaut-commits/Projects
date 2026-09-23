@@ -630,7 +630,7 @@ const SCHEMA_VERSION = {
 // valida al arrancar: si el proveedor cambia un campo, hoy la app simplemente deja de clasificar
 // facturas sin decir por qué. Con esto queda un diagnóstico legible en Configuración › Versión.
 const CONTRATOS_DATOS = [
-  // El A1 es un FLUJO DE EVENTOS por documento (ADR-0020, regla 73): una fila por notificación, con `Secuencia` y
+  // El A1 es un FLUJO DE EVENTOS por documento (ADR-0020, regla 74): una fila por notificación, con `Secuencia` y
   // `FchNotificacion`. La primera fila del log es una creación y trae el documento entero; por eso los requeridos se
   // contrastan contra ella. Un archivo con el layout anterior (una fila por documento) se diagnostica como
   // «faltan campos»: la app lo pliega igual, pero el contrato entregado no es el esperado.
@@ -739,7 +739,7 @@ const MIGRACIONES = {
       }
       return out;
     },
-    // ADR-0019 (regla 67): el corte del día pasó a ser por RELOJ del tenant y a ELIMINAR la oportunidad sin oferta. La
+    // ADR-0019 (regla 68): el corte del día pasó a ser por RELOJ del tenant y a ELIMINAR la oportunidad sin oferta. La
     // v3 retira `etapaNoGestionada` (el criterio es «tiene oferta», no una etapa) y `horasDia` (el día va del reinicio
     // al corte), renombra `reaperturaDiaria` → `corteDiario` conservando lo que el tenant eligió, y suelta las horas
     // que eran el default viejo sin efecto (08:00 / 18:00) para que manden 06:00 / 23:00; una hora que el tenant cambió
@@ -1200,7 +1200,7 @@ const CLOSE_REASONS = [
   { k: "documentation", label: "Documentación", result: "lost" },
   { k: "grant_block", label: "Bloqueo de otorgamiento", result: "lost" },
   { k: "inactivity", label: "Caducada por inactividad", result: "expired" },
-  // El comité de crédito rechazó la línea puntual y no quedó ninguna factura en la oferta (ADR-0015, regla 68).
+  // El comité de crédito rechazó la línea puntual y no quedó ninguna factura en la oferta (ADR-0015, regla 69).
   { k: "committee_reject", label: "Línea rechazada por el comité", result: "lost" },
   { k: "other", label: "Otro", result: "lost" },
 ];
@@ -2942,14 +2942,14 @@ function mixSowDeal(deal) {
 // carga manual de XML sí las leía, así que una factura cargada a mano tenía fechas reales y una del
 // inbound no—.
 //
-// ── EL A1 ES UN FLUJO DE EVENTOS POR DOCUMENTO (ADR-0020, regla 73) ─────────────────────────────
+// ── EL A1 ES UN FLUJO DE EVENTOS POR DOCUMENTO (ADR-0020, regla 74) ─────────────────────────────
 // DTESync notifica el mismo documento varias veces: primero que existe (`DTE_SINCRONIZADO`, `Secuencia` 1, el
 // documento entero y sin banderas) y después cada cambio de su estado —el acuse del receptor, el reclamo, la
 // nota de crédito— como `DTE_ACTUALIZADO` con la `Secuencia` siguiente, la identidad del documento y el
 // `EstadoDTE` ACUMULADO. `window.DTESYNC` es ese log, en orden de llegada. Nada que quiera «un documento» lo
 // lee directo: lo pliega `documentosDTE()`, la ÚNICA lectura del log fuera del stream —el stream sí lo
 // recorre evento a evento, porque su trabajo es que lleguen en orden—. El pliegue es el mismo que hace el
-// generador (`GeneradorDatos/lib/dtesync.js`, `plegar`): `regla_73.test.mjs` corre los dos sobre el mismo log
+// generador (`GeneradorDatos/lib/dtesync.js`, `plegar`): `regla_74.test.mjs` corre los dos sobre el mismo log
 // y exige el mismo resultado. Los documentos salen por folio, el orden del libro, que es el que el activo
 // plano traía: ningún lector cambia de orden por el pliegue.
 function plegarDTE(eventos) {
@@ -3002,7 +3002,7 @@ function fechasDocumento(f) {
 }
 // Antigüedad del documento en días: se MIDE contra su emisión y la fecha de corte del activo. Es lo
 // que decide si una factura entra en la ventana del libro, si es demasiado nueva para publicar y, desde la
-// regla 64, si es demasiado vieja para ser candidata del inbound.
+// regla 65, si es demasiado vieja para ser candidata del inbound.
 const diasDesdeEmision = (f) => Math.max(0, Math.round((corteMs() - Date.parse(fechasDocumento(f).emision + "T00:00:00")) / 86400000));
 const fmtFechaDoc = (iso) => (iso ? new Date(Date.parse(iso + "T00:00:00")).toLocaleDateString("es-CL") : "—");
 // Plazo en días de una fila del activo: la diferencia entre sus dos fechas. El inbound lo fijaba en
@@ -3509,7 +3509,7 @@ function verifResumenDeal(deal, estado) {
     ok = 0,
     pend = 0;
   fs.forEach((f) => {
-    // REGLA 74 · El documento vetado —por la llamada (regla 70) o por el SII (ADR-0021)— está PENDIENTE aunque el modelo o
+    // REGLA 75 · El documento vetado —por la llamada (regla 71) o por el SII (ADR-0021)— está PENDIENTE aunque el modelo o
     // una llamada anterior lo dieran por verificado: el deudor no lo va a pagar, y una llamada más no lo destraba.
     if (noConfirmada(deal, f, estado && estado.vetadas)) {
       tel++;
@@ -3523,7 +3523,7 @@ function verifResumenDeal(deal, estado) {
       if (!vf.tel || vf.tel.estado !== "Completada") pend++;
     }
   });
-  // REGLA 70 (ADR-0018) · Las marcadas «no verificada» que SIGUEN en la oferta son el issue de la operación: el deudor
+  // REGLA 71 (ADR-0018) · Las marcadas «no verificada» que SIGUEN en la oferta son el issue de la operación: el deudor
   // no las confirmó y nadie las retiró todavía —retirarlas es decisión del ejecutivo comercial—. Cuentan también en
   // `pend` (no tienen llamada registrada), así que VER-01 sigue mandando; acá se nombran para que la cabecera, el tab y
   // el aviso digan qué folios y de qué deudor. El veto entra por `estado.vetadas` para que la función siga siendo pura.
@@ -3535,7 +3535,7 @@ function verifResumenDeal(deal, estado) {
     });
   return { total: fs.length, tel, ok, pend, noVerif: noVerificadas.length, noVerificadas, sii: noVerificadas.filter((x) => x.origen === "sii").length };
 }
-// El ISSUE de la verificación fallida, en palabras (regla 70): null si ninguna factura marcada sigue en la oferta. Puro
+// El ISSUE de la verificación fallida, en palabras (regla 71): null si ninguna factura marcada sigue en la oferta. Puro
 // y de nivel módulo porque lo consultan la cabecera del detalle, el tab de Verificación, el control VER-01 y el aviso al
 // ejecutivo, y los cuatro tienen que decir lo mismo.
 function issueVerificacion(deal, estado) {
@@ -3559,7 +3559,7 @@ function issueVerificacion(deal, estado) {
       .map((d) => `${d} (folio${m[d].length > 1 ? "s" : ""} ${m[d].join(", ")})`)
       .join("; ");
   };
-  // REGLA 74 (ADR-0021) · Lo que el SII inhabilitó se nombra aparte y con su motivo: no es una llamada que faltó, es un
+  // REGLA 75 (ADR-0021) · Lo que el SII inhabilitó se nombra aparte y con su motivo: no es una llamada que faltó, es un
   // documento que el deudor no va a pagar. La salida es la misma que la de la verificación fallida.
   const partes = [];
   if (llamada.length) partes.push(`${llamada.length} factura(s) no pudieron ser verificadas con el deudor: ${detalleDe(llamada)}`);
@@ -3639,7 +3639,7 @@ function filasVerificacion(deals, estado) {
     const fs = (d && d.facturasOp) || [];
     // Las vetadas que YA SALIERON vuelven a la lista como documentos de pleno derecho: no están en la oferta —por eso
     // no suman al monto— pero son el resultado de una verificación y tienen que poder mirarse. La marcada que SIGUE en
-    // la oferta (regla 70: marcar no retira) ya viene en `fs` y se lee de ahí; listarla dos veces contaría dos folios.
+    // la oferta (regla 71: marcar no retira) ya viene en `fs` y se lee de ahí; listarla dos veces contaría dos folios.
     const enOfertaIds = new Set(fs.map((f) => f && f.id));
     const vetadas = Object.entries(vet)
       .filter(([id]) => !enOfertaIds.has(id))
@@ -4107,7 +4107,7 @@ function facturaDeDTE(r) {
     venc: plazoDTE(r),
     credito: r.FormaPago === "2" || r.FormaPago === 2,
     ...estadoDeDTE(est),
-    // Hasta qué notificación del A1 sabe este documento (regla 73): una actualización que llegue después se aplica
+    // Hasta qué notificación del A1 sabe este documento (regla 74): una actualización que llegue después se aplica
     // sólo si es más nueva, así una re-entrega no se aplica dos veces.
     secuenciaDTE: +r.Secuencia || 1,
     fchNotificacion: r.FchNotificacion || null,
@@ -4117,8 +4117,8 @@ function facturaDeDTE(r) {
   };
 }
 // EL ESTADO DEL DOCUMENTO que el A1 trae en `EstadoDTE`, leído en UN solo sitio: lo usa `facturaDeDTE` al construir
-// el documento y `eventoActualizacionDTE` cuando llega una actualización (regla 73). EL ACUSE DEL RECEPTOR es una
-// bandera del DTE (M-01, regla 72): `Aceptado` con su `FchAcuseRecibo`, o `Reclamado` con su `FchReclamo`, o nada
+// el documento y `eventoActualizacionDTE` cuando llega una actualización (regla 74). EL ACUSE DEL RECEPTOR es una
+// bandera del DTE (M-01, regla 73): `Aceptado` con su `FchAcuseRecibo`, o `Reclamado` con su `FchReclamo`, o nada
 // mientras el receptor no se pronuncia (sus primeros 8 días desde la emisión). Acá sólo se LEE, como el reclamo y la
 // nota de crédito; se muestra y NO filtra: sin acuse la factura sigue siendo candidata (definición del negocio,
 // 23-09-2026).
@@ -4133,7 +4133,7 @@ function estadoDeDTE(est) {
     fchRecepcion: est.FchRecepcion || null,
   };
 }
-// Cómo se rotula el acuse de un documento (regla 72): tres estados en palabras del negocio, con la fecha del acuse o
+// Cómo se rotula el acuse de un documento (regla 73): tres estados en palabras del negocio, con la fecha del acuse o
 // del reclamo cuando el A1 la trae. Es la ÚNICA lectura de `acuse` de la pantalla; ningún filtro lo mira.
 function acuseLabel(f) {
   const a = (f && f.acuse) || "sin_acuse";
@@ -4309,7 +4309,7 @@ function cesionesAjenasDeDeal(deal) {
   out.factoring = orden[0] || null;
   return out;
 }
-// ── LAS ACTUALIZACIONES DEL A1 (regla 73) ────────────────────────────────────────────────────────
+// ── LAS ACTUALIZACIONES DEL A1 (regla 74) ────────────────────────────────────────────────────────
 // Una notificación posterior a la creación no es una factura nueva: es el documento que ya llegó, con su estado
 // nuevo. El stream la lleva como evento `actualizacion` y el inbound la aplica donde el documento viva.
 function eventoActualizacionDTE(r, i) {
@@ -4340,7 +4340,7 @@ const glosaCambioDTE = (ev) =>
         : ev.cambio === "acuse"
           ? "el acuse de recibo"
           : "un cambio de estado";
-// Quien firma el veto cuando lo escribe el servicio y no una persona (regla 74).
+// Quien firma el veto cuando lo escribe el servicio y no una persona (regla 75).
 const ACTOR_SII = "SII · DTESync";
 // Aplica una actualización a un documento que ya vive en un pool: devuelve el MISMO objeto si el evento no es más
 // nuevo que lo que el documento ya sabe (una re-entrega no se aplica dos veces), o una copia con el estado nuevo.
@@ -4361,12 +4361,12 @@ const aplicarEventosAEvento = (e, porDoc) => {
   const ev = f && porDoc.get(f.id);
   return ev ? aplicarActualizacionAEvento(e, ev) : e;
 };
-// QUÉ HACE UNA ACTUALIZACIÓN CON UNA OPORTUNIDAD (regla 73, regla 74). El documento se parcha donde viva: en los
+// QUÉ HACE UNA ACTUALIZACIÓN CON UNA OPORTUNIDAD (regla 74, regla 75). El documento se parcha donde viva: en los
 // disponibles siempre, y en la oferta también. Mientras el paquete es del ejecutivo, con eso basta: la fila lo muestra
 // bloqueado y él decide. Si la oferta ya está cerrada, publicada o firmada, la NC, el reclamo o la cesión a otro además
 // lo INHABILITAN (ADR-0021; el usuario, 23-09-2026: «se debe dejar la oferta como no cursable, el documento debe quedar
 // inhabilitado, el ejecutivo debería retirar la factura, re-evaluar, volver a firmar»): el documento queda con su estado
-// nuevo y marcado `inhabilitada`, la bitácora lo dice con `exito: false`, y quien llama escribe el veto de la regla 70
+// nuevo y marcado `inhabilitada`, la bitácora lo dice con `exito: false`, y quien llama escribe el veto de la regla 71
 // (`marcarNoVerificada`, origen «sii») para que la operación no se curse hasta que el ejecutivo lo retire, re-evalúe y
 // vuelva a publicar para una nueva firma. Un documento que el deudor reclamó, anuló o cedió a otro no lo va a pagar,
 // tenga o no la verificación telefónica en verde; cedido a otro, el SII rechazará nuestra cesión. El acuse se anota
@@ -4419,7 +4419,7 @@ function aplicarActualizacionDTE(deal, ev) {
   return { deal: d, cambio };
 }
 // Todas las actualizaciones de un lote sobre una oportunidad: cuántas la tocaron y qué documentos quedaron inhabilitados
-// (regla 74), con su evento, para que quien llama escriba el veto fuera de todo updater.
+// (regla 75), con su evento, para que quien llama escriba el veto fuera de todo updater.
 function aplicarEventosADeal(deal, evs) {
   let d = deal;
   let n = 0;
@@ -4478,7 +4478,7 @@ function streamDesdeDTE(dte) {
       buenPagador: tDeu === "Lista Blanca",
       siiSync: true,
       contactoVerificado: esCliente,
-      // La antigüedad del DOCUMENTO contra el corte (regla 13-ter), que es la que el filtro aplica (regla 64).
+      // La antigüedad del DOCUMENTO contra el corte (regla 13-ter), que es la que el filtro aplica (regla 65).
       // Traía un 1 fijo y la Bandeja decía «1d» para todas las facturas.
       diasEmision: diasDesdeEmision(fac),
       esCliente,
@@ -4692,7 +4692,7 @@ function competenciaDeDeal(deal) {
 }
 
 // ¿Cedida a un factoring AJENO? La factura que otro factor ya se llevó no es candidata del inbound: no se
-// compra dos veces y contarla inflaba el monto con que se dimensionaba la oportunidad (ADR-0014, regla 63).
+// compra dos veces y contarla inflaba el monto con que se dimensionaba la oportunidad (ADR-0014, regla 64).
 // La cedida a Security NO se excluye: es cartera propia, no competencia. La fuente es la misma que usa la
 // incorporación (`cesionDeFactura`, sobre el A2); el evento del stream lleva el folio en `facturasOp[0]`.
 const cedidaAFactoringAjeno = (f) => {
@@ -4705,12 +4705,12 @@ const cedidaAFactoringAjeno = (f) => {
 const diasEmisionEvento = (f) => diasDesdeEmision((f && f.facturasOp && f.facturasOp[0]) || f);
 // ¿Más vieja que lo que el tenant va a buscar? El tope es política del factoring (`antiguedadMaxDias`, Configuración ›
 // Operación; 20 días por defecto) y se lee con `pol`, nunca incrustado (regla 9-bis): quinta condición de «Buena
-// factura» (regla 64). «No más de N» incluye el día N.
+// factura» (regla 65). «No más de N» incluye el día N.
 const superaAntiguedad = (f) => diasEmisionEvento(f) > pol("antiguedadMaxDias", 20);
 // ---- Motor de clasificación: ¿la factura califica alguna regla activa? ----
 const CRITERIO_PRED = {
   // Criterios a nivel FACTURA: una factura ELEGIBLE para inbound es a crédito, no reclamada, sin nota de
-  // crédito, no cedida a un factoring ajeno (regla 63), emitida hace no más de `antiguedadMaxDias` (regla 64) y con
+  // crédito, no cedida a un factoring ajeno (regla 64), emitida hace no más de `antiguedadMaxDias` (regla 65) y con
   // deudor que abre oportunidad: Lista Blanca, Autorizado o histórico del último año
   // (con BICE = CAT1, con otro factor = CAT4). Los deudores "Otro" sin historia quedan excluidos.
   // Deudor que abre oportunidad: el que está en una lista (bucket elegible) O el que alcanza la Nota
@@ -4985,7 +4985,7 @@ function volumenCesionarios() {
   _volCes = m;
   return m;
 }
-// ── EL RELOJ DEL TENANT Y EL CORTE DEL DÍA (ADR-0019, regla 67) ─────────────────────────────────
+// ── EL RELOJ DEL TENANT Y EL CORTE DEL DÍA (ADR-0019, regla 68) ─────────────────────────────────
 // Puras: reciben la configuración, la hora o la lista, y dicen qué toca. Son el sustituto legítimo del reloj en la
 // suite —el e2e no puede mover la hora— y lo que en producción consume el job del backend.
 const horaAMin = (hhmm) => {
@@ -5085,7 +5085,7 @@ function eventoDeReoriginacion(d, diaCorte) {
 }
 const CFG_OPER_KEY = "fs_cfg_oper";
 const CFG_OPER_BASE = {
-  // EL RELOJ DEL TENANT (ADR-0019, regla 67). El job del inbound REINICIA el día a `horaInicio` —vuelve a abrir, como
+  // EL RELOJ DEL TENANT (ADR-0019, regla 68). El job del inbound REINICIA el día a `horaInicio` —vuelve a abrir, como
   // oportunidades nuevas, las que el corte eliminó— y CORTA a `horaFin`: la oportunidad sin oferta se elimina y la que
   // tiene oferta no se toca. Entre las dos horas corre la corrida; fuera de ellas no se abre nada. En la demo cada
   // corrida es una hora simulada (`cronMs`) y el día va del reinicio al corte: el conteo de corridas ya no decide nada.
@@ -5154,7 +5154,7 @@ const CFG_OPER_BASE = {
   vigenciaLineaMeses: 12,
   ventanaLibroDias: 60, // ventana del libro de ventas para buscar facturas candidatas
   // Antigüedad máxima (días desde la emisión, contra el corte del activo) con que una factura es candidata del
-  // inbound: más vieja que esto no se va a buscar, porque nadie la va a comprar (regla 64). Quinta condición de
+  // inbound: más vieja que esto no se va a buscar, porque nadie la va a comprar (regla 65). Quinta condición de
   // «Buena factura»; «no más de 20» incluye el día 20.
   antiguedadMaxDias: 20,
   // — Marca (por tenant) —
@@ -5912,7 +5912,7 @@ const GIRO_TIPOS_BASE = [
 // Los HECHOS que el motor evalúa por deudor. Se declaran para que el catálogo no pueda pedir una
 // condición que nadie calcula: un `requiere` con una clave que no está acá no lo cumple nadie y la
 // factura caería siempre al resto, sin que nada lo dijera.
-// `sinComite` es el QUINTO hecho (ADR-0017, regla 66): el resultado de la asignación de LÍNEAS. Un deudor cuyas
+// `sinComite` es el QUINTO hecho (ADR-0017, regla 67): el resultado de la asignación de LÍNEAS. Un deudor cuyas
 // facturas requieren comité no gira Express aunque cumpla las otras cuatro — la operación depende de una línea
 // que todavía no existe. Decidido por el usuario el 22-09-2026: «si hay que pedir comité el giro debe ser Normal».
 const GIRO_HECHOS = ["verificado", "sinExcepcionCliente", "sinExcepcionDeudor", "sinPrimeraOperacion", "sinComite"];
@@ -6580,7 +6580,7 @@ function candidatasDe(deal) {
 // Las facturas que el deudor no confirmó quedan vetadas para la operación. El veto es el resultado de
 // una llamada —evidencia con actor y hora—, así que entra por parámetro: es lo que hacía que
 // `estadoCandidata`, que decide si una factura se puede incorporar, pareciera pura sin serlo.
-// La entrada del veto, o null: lleva quién lo escribió (`por`), cuándo, el motivo y —si lo escribió el SII, regla 74— el
+// La entrada del veto, o null: lleva quién lo escribió (`por`), cuándo, el motivo y —si lo escribió el SII, regla 75— el
 // origen «sii» y el cambio del documento que lo causó.
 function vetoDe(deal, f, vetadas) {
   const todas = vetadas || (typeof NO_CONFIRMADAS !== "undefined" ? NO_CONFIRMADAS : {}) || {};
@@ -6593,7 +6593,7 @@ function noConfirmada(deal, f, vetadas) {
 function estadoCandidata(f, deal, estado) {
   const monto = f.monto || 0;
   const R = (clave, label, detalle) => ({ clave, bloqueada: true, agregable: false, label, detalle, tono: "red", montoNeto: monto, ncMonto: 0 });
-  // El veto de la verificación manda sobre cualquier otro estado de la candidata. Si lo escribió el SII (regla 74), la
+  // El veto de la verificación manda sobre cualquier otro estado de la candidata. Si lo escribió el SII (regla 75), la
   // etiqueta dice por qué el documento quedó inhabilitado.
   const veto = vetoDe(deal, f, estado && estado.vetadas);
   if (veto)
@@ -6622,7 +6622,7 @@ function estadoCandidata(f, deal, estado) {
     // mensaje dice por cuánto, que es lo que el ejecutivo necesita para decidir si vale la pena
     // pedirle al cliente que resuelva la cesión antes.
     const cuanto = (c) => (c.parcial ? ` por ${fmtMM(c.monto)} de ${fmtMM(c.montoDocumento)} (cesión parcial)` : "");
-    // La cedida a SECURITY no se bloquea (ADR-0014, regla 63): es cartera propia y entra como cualquier otra;
+    // La cedida a SECURITY no se bloquea (ADR-0014, regla 64): es cartera propia y entra como cualquier otra;
     // se rotula para que el ejecutivo lo sepa. Antes salía «Ya financiada», bloqueada, y el caso 95 lo fijaba.
     if (ces && ces.nuestra)
       return {
@@ -8231,7 +8231,7 @@ function DealCard({ deal, onOpen, onDragStart }) {
       {!isPerdida &&
         (() => {
           const vr = verifResumenDeal(deal);
-          // REGLA 70 · La factura marcada «no verificada» que sigue en la oferta es un issue con nombre propio, no un
+          // REGLA 71 · La factura marcada «no verificada» que sigue en la oferta es un issue con nombre propio, no un
           // «pendiente» más: dice que no se cursa y qué tiene que hacer el ejecutivo.
           const iss = vr.noVerif > 0 ? issueVerificacion(deal) : null;
           return (
@@ -10585,7 +10585,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         archs: arr,
         por: actorEtiqueta(usuario),
         fecha: new Date().toLocaleString("es-CL"),
-        ...historiaVisado((repoVisadoDetalle.get(deal.id) || {})[x.stKey]), // regla 69: nada se borra
+        ...historiaVisado((repoVisadoDetalle.get(deal.id) || {})[x.stKey]), // regla 70: nada se borra
       },
     };
     // OTG-01 · SE COMPRUEBA LA ATRIBUCIÓN ANTES DE ESCRIBIR, no sólo al dibujar el botón. Quien visa
@@ -10768,7 +10768,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     g.mias = g.rows.filter(puedeVisarX).length;
   });
   const truncD = (s, n) => (s && s.length > n ? s.slice(0, n).trim() + "…" : s);
-  // REGLA 69 · Historia de una excepción que la versión vigente ya no levanta: la solicitud marcada, el visado
+  // REGLA 70 · Historia de una excepción que la versión vigente ya no levanta: la solicitud marcada, el visado
   // marcado o los dos, con «ya no aplica desde la versión N», actor sistema y hora. `null` si esa clave nunca tuvo
   // excepción o si sigue vigente. Es lo que hace auditable que la regla quedó así en el cambio de versión.
   const tieneExcepcionAnterior = (stKey) => {
@@ -10804,7 +10804,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     );
   };
   // Las marcadas cuya fila ya no existe —el deudor salió de la operación— no tienen tarjeta donde mostrarse: van en
-  // su propia lista, para que la historia del visado no dependa de que el sujeto siga en la oferta (regla 69).
+  // su propia lista, para que la historia del visado no dependa de que el sujeto siga en la oferta (regla 70).
   const clavesEnPantalla = new Set([...cliRules.map((x) => x.stKey), ...deudGrupos.flatMap((g) => g.rows.map((x) => x.stKey))]);
   const solTodasDeal = SOLICITUD_EXC[deal.id] || {};
   const huerfanasMarcadas = Array.from(new Set([...Object.keys(solTodasDeal), ...Object.keys(visSt)]))
@@ -10896,7 +10896,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         {x.disp === "excepcion" &&
           (() => {
             // «Ya no aplica» NO es una decisión vigente: si la regla volvió a levantar, la excepción está pendiente otra
-            // vez y la solicitud marcada se muestra como ANTERIOR, no como la de hoy (regla 69).
+            // vez y la solicitud marcada se muestra como ANTERIOR, no como la de hoy (regla 70).
             const estado = excSinVisar(visSt, x.stKey) ? undefined : visSt[x.stKey]; // "aprobado" | "rechazado" | undefined
             const puedeVisar = x.regla && puedeAprobarExc(usuario, x.regla, x.nivel || 4);
             const solTodas = SOLICITUD_EXC[deal.id] || {};
@@ -11241,7 +11241,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
               </div>
             );
           })()}
-        {/* REGLA 69 · La excepción que esta versión ya no levanta no desaparece: el criterio sale cumplido y la
+        {/* REGLA 70 · La excepción que esta versión ya no levanta no desaparece: el criterio sale cumplido y la
             solicitud o el visado anteriores se muestran con su estado nuevo. */}
         {x.disp !== "excepcion" && excepcionAnteriorBlock(x.stKey)}
       </div>
@@ -11254,7 +11254,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
           Re-evaluación de la simulación
         </div>
         {(() => {
-          // REGLA 71 · La versión es la tupla de los cinco motores, así que el conteo por motor sale de las versiones
+          // REGLA 72 · La versión es la tupla de los cinco motores, así que el conteo por motor sale de las versiones
           // emitidas y tiene que ser el mismo en los cinco; si no lo es (versiones anteriores a la regla), se dice.
           const nMot = contarVersiones(shown);
           const parejo = Object.values(nMot).every((n) => n === shown.length);
@@ -11265,7 +11265,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
             <span
               className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold"
               style={{ backgroundColor: parejo ? "#F1ECFF" : "#FFF7ED", color: parejo ? C.indigo : C.amber, cursor: "help" }}
-              title={`Versiones por motor: ${detalle}${parejo ? " — las cinco cuentan igual (regla 71)" : " — no cuentan igual: hay versiones anteriores a la regla 71"}`}
+              title={`Versiones por motor: ${detalle}${parejo ? " — las cinco cuentan igual (regla 72)" : " — no cuentan igual: hay versiones anteriores a la regla 72"}`}
             >
               {shown.length} {shown.length === 1 ? "versión" : "versiones"} · {MOTORES_VERSION.length} motores
             </span>
@@ -11423,7 +11423,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         const active = tabsAll.find((t) => t.key === otorgTab) || tabsAll[0];
         const reqRows = active.rows.filter(reqAprob);
         const noEjecRows = active.rows.filter((x) => x.disp === "no_ejecutada");
-        // REGLA 69 · El criterio cumplido que TUVO excepción va en su propio balde, siempre a la vista: dentro del
+        // REGLA 70 · El criterio cumplido que TUVO excepción va en su propio balde, siempre a la vista: dentro del
         // colapsable de aprobadas la marca «ya no aplica desde la versión N» no la veía nadie, que es exactamente lo
         // que la regla existe para impedir (medido al abrir la pantalla el 23-09-2026).
         const antRows = active.rows.filter((x) => !reqAprob(x) && x.disp !== "no_ejecutada" && tieneExcepcionAnterior(x.stKey));
@@ -12212,7 +12212,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
           </>
         )}
       </div>
-      {/* REGLA 70 · El issue de la verificación fallida, en el tab que lo produce: qué folios, de qué deudor y qué
+      {/* REGLA 71 · El issue de la verificación fallida, en el tab que lo produce: qué folios, de qué deudor y qué
           tiene que hacer el ejecutivo. Mientras esté, VER-01 bloquea el curse. */}
       {(() => {
         const iss = issueVerificacion(deal);
@@ -12583,7 +12583,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
                                   Registrar verificación
                                 </button>
                               )}
-                              {/* Si el deudor NO confirma, la factura se MARCA y sigue en la oferta (regla 70,
+                              {/* Si el deudor NO confirma, la factura se MARCA y sigue en la oferta (regla 71,
                           ADR-0018): la operación queda con el issue y el ejecutivo comercial recibe el aviso;
                           retirarla, re-simular y volver a publicar es decisión suya. */}
                               {!bloqueado && puedeAccionar && onNoConfirmada && tel.estado !== "Completada" && (
@@ -13146,7 +13146,7 @@ function DealDrawer({
   const [detReeval, setDetReeval] = useState(false);
   const reevaluarLinea = () => {
     setDetReeval(true);
-    if (onEvaluar) onEvaluar(deal.id); // regla 71: el gesto es el evento, y el evento emite la versión
+    if (onEvaluar) onEvaluar(deal.id); // regla 72: el gesto es el evento, y el evento emite la versión
     setTimeout(() => {
       setDetReeval(false);
       setReevalPend(false);
@@ -13852,7 +13852,7 @@ function DealDrawer({
                         {verifPendOp}
                       </span>
                     )}
-                    {/* REGLA 70 · El issue de la verificación fallida, en la cabecera del detalle: no se cursa hasta que el
+                    {/* REGLA 71 · El issue de la verificación fallida, en la cabecera del detalle: no se cursa hasta que el
                         ejecutivo retire las marcadas, re-simule y vuelva a publicar. */}
                     {k === "verificacion" &&
                       (() => {
@@ -13895,7 +13895,7 @@ function DealDrawer({
                   // Al enviar a pre-evaluación, cada regla «sujeta a excepción» que aún no fue solicitada
                   // queda enviada a su(s) apoderado(s) facultado(s) CON la declaración explícita de que el
                   // ejecutivo no tiene comentarios: es lo que confirmó en «Enviar de todos modos», y sin ella la
-                  // escritura la rechazaría (regla 65). Si no había excepciones mudas, este conjunto está vacío.
+                  // escritura la rechazaría (regla 66). Si no había excepciones mudas, este conjunto está vacío.
                   const st = (typeof VISADO_STATE !== "undefined" && VISADO_STATE[deal.id]) || {};
                   const sol = (typeof SOLICITUD_EXC !== "undefined" && SOLICITUD_EXC[deal.id]) || {};
                   evaluarOtorgItems(deal)
@@ -14201,13 +14201,13 @@ function DealDrawer({
                 // Qué deja fuera a cada factura. La cesión es de UN FOLIO —el A2 dice cuál—, no de
                 // «las primeras N de la lista»: `fi < deal.cedidasOtro` marcaba facturas por su
                 // posición, así que reordenar la oferta cambiaba cuáles figuraban cedidas.
-                // La cedida a SECURITY no se excluye (ADR-0014, regla 63): es cartera propia y entra con su monto.
+                // La cedida a SECURITY no se excluye (ADR-0014, regla 64): es cartera propia y entra con su monto.
                 // Antes salía «Ya financiada por Security» y no contaba —la misma factura que la lista de
                 // candidatas ya dejaba agregar—, así que la oferta y su panel decían cosas distintas.
                 const motivoExcl = (f) => {
                   const c = cesionDeFactura(deal.rutEmisor, f && f.folio);
                   if (c && !c.nuestra) return `Cedida a ${c.factoring}${c.parcial ? ` (parcial, ${fmtMM(c.monto)})` : ""}`;
-                  // REGLA 74 · Lo que el SII inhabilitó sobre la oferta cerrada o firmada se dice con su motivo.
+                  // REGLA 75 · Lo que el SII inhabilitó sobre la oferta cerrada o firmada se dice con su motivo.
                   if (f && f.inhabilitada) return `Inhabilitada por el SII · ${f.inhabilitada.glosa}`;
                   return f.reclamada ? "Reclamada" : f.notaCredito ? "Nota de crédito" : null;
                 };
@@ -14233,7 +14233,7 @@ function DealDrawer({
                 // Regla comercial: no ofertar por debajo de la tasa del ÚLTIMO negocio cursado del cliente.
                 // Si la ponderada por riesgo es menor, la simulación usa la tasa del último negocio.
                 // Selección de la tasa del negocio — política del factoring (Configuración › Operación). La decide
-                // `tasaDelNegocio` (regla 71), el mismo sitio que lee la versión de pricing: lo que se muestra y lo que
+                // `tasaDelNegocio` (regla 72), el mismo sitio que lee la versión de pricing: lo que se muestra y lo que
                 // se versiona no pueden separarse.
                 const tn = tasaDelNegocio(deal, tasaPondRiesgo, CFG_ACTIVA);
                 const tul = tn.ultNeg;
@@ -14687,7 +14687,7 @@ function DealDrawer({
                                       🔒 {SHORT_EST[est.clave]}
                                     </span>
                                   );
-                                // Agregable pero ROTULADA (regla 63): la cedida a Security entra, y el ejecutivo sabe que es cartera propia.
+                                // Agregable pero ROTULADA (regla 64): la cedida a Security entra, y el ejecutivo sabe que es cartera propia.
                                 else if (f.candidata && est.label)
                                   estadoNode = (
                                     <span
@@ -14950,7 +14950,7 @@ function DealDrawer({
                         // Estado de carga: mientras se resuelven las consultas por deudor se muestra el
                         // esqueleto. La corrida de facturas nuevas NO re-simula (regla 14): sólo engrosa el
                         // pool disponible, y eso no obliga a esconder la pantalla. La marca de «recálculo
-                        // en curso» que antes lo hacía se retiró con la regla 71 (ADR-0013): anunciaba una
+                        // en curso» que antes lo hacía se retiró con la regla 72 (ADR-0013): anunciaba una
                         // evaluación que nunca ocurría, y en la pestaña propia —un snapshot del deal— no se
                         // limpiaba nunca.
                         if (detCargando)
@@ -15443,7 +15443,7 @@ function DealDrawer({
                               className="grid items-center gap-2 py-1 t10"
                               style={{ gridTemplateColumns: plana ? GC_OP : GC_O, borderBottom: `1px solid ${C.line}`, opacity: bloq ? 0.55 : 1 }}
                             >
-                              {/* La cedida a Security va rotulada (regla 63): entra igual, y el ejecutivo sabe que es cartera propia. */}
+                              {/* La cedida a Security va rotulada (regla 64): entra igual, y el ejecutivo sabe que es cartera propia. */}
                               <span
                                 className="truncate t9"
                                 style={{ color: C.sub }}
@@ -16329,7 +16329,7 @@ function DealDrawer({
                                     tasaEqExacta={tasaEqExacta}
                                     reevalPend={reevalPend}
                                     onReevaluar={() => {
-                                      if (onEvaluar) onEvaluar(deal.id); // regla 71
+                                      if (onEvaluar) onEvaluar(deal.id); // regla 72
                                       setReevalPend(false);
                                     }}
                                     onSim={setSimOp}
@@ -18290,7 +18290,7 @@ function DealDrawer({
         }}
         onCancelar={() => setConfirmRetiro(null)}
       />
-      {/* REGLA 70 (ADR-0018) · El deudor no confirmó: la factura se MARCA y SIGUE en la oferta. Retirarla, re-simular
+      {/* REGLA 71 (ADR-0018) · El deudor no confirmó: la factura se MARCA y SIGUE en la oferta. Retirarla, re-simular
           y volver a publicar es decisión del ejecutivo comercial, que recibe el aviso por mensajería. */}
       <ConfirmDialog
         abierto={!!confirmNoConf}
@@ -18980,7 +18980,7 @@ function InboundStream({
       <div className="mt-1 flex flex-wrap items-center gap-x-1.5 t10" style={{ color: C.faint }}>
         <span>{recibidas} facturas</span>·<span style={{ color: C.indigo }}>{acumuladas} por procesar</span>·
         <span style={{ color: C.amber }}>{feed.length} sin clasificar</span>·
-        <span title="Notificaciones posteriores a la creación del documento —acuse, reclamo, nota de crédito— aplicadas donde el documento vive (regla 73)">
+        <span title="Notificaciones posteriores a la creación del documento —acuse, reclamo, nota de crédito— aplicadas donde el documento vive (regla 74)">
           {actualizadas} actualizaciones
         </span>
         ·
@@ -21870,7 +21870,7 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                             // MÁS fiel que recalcular, que puede dar distinto si el origen se movió desde
                             // entonces. Es el mismo criterio de la regla 13 aplicado al tubo.
                             // Sin versión se cae a `evCli`, la lectura de CLIENTE: el monto contra la
-                            // suma de sus líneas (LF1–LF4), que no necesita motor. Desde la regla 71
+                            // suma de sus líneas (LF1–LF4), que no necesita motor. Desde la regla 72
                             // (ADR-0013) la versión la emite el evento de evaluación al SIMULAR, así que
                             // toda operación simulada tiene la suya; sin versión quedan las fixtures y lo
                             // simulado antes de la regla, y para ésas sigue haciendo falta la caída.
@@ -23821,11 +23821,11 @@ function fmtVarCli(k, val) {
 // versión inmutable con los valores recibidos. Re-evaluar tras la firma genera una nueva versión (rev+1)
 // cuyos valores actualizados pueden reparar las excepciones re-evaluables desde el origen.
 let SIM_VERSIONS = {}; // { [dealId]: [ { v, rev, ts, origen, vars, estado, nApr, nExc, nRech } ] }
-// LA VERSIÓN DE LA OPERACIÓN (regla 71, ADR-0013): la tupla de los CINCO motores sobre el mismo paquete —otorgamiento
+// LA VERSIÓN DE LA OPERACIÓN (regla 72, ADR-0013): la tupla de los CINCO motores sobre el mismo paquete —otorgamiento
 // (`vars`/`res`), verificación, línea, giro y pricing— con número, hora, política y build. La emite `evaluarOperacion`,
 // que es el único evento: simular, «Re-evaluar operación» y «Re-evaluación de la simulación» son el mismo gesto con otro
 // `origen`. `opts`: `origenActualizado` (el mock del origen que regulariza las variables re-evaluables: sólo la
-// re-evaluación de la simulación), `linea` (el recorte que trae el rechazo del comité, regla 68: nunca se re-asigna),
+// re-evaluación de la simulación), `linea` (el recorte que trae el rechazo del comité, regla 69: nunca se re-asigna),
 // `origen` y `motivo` (texto y código del evento).
 function snapVersionCli(deal, rev, opts) {
   const o = opts || {};
@@ -23839,7 +23839,7 @@ function snapVersionCli(deal, rev, opts) {
     // Re-evaluación de la SIMULACIÓN: tras la firma, el origen regulariza las variables RE-EVALUABLES (documentación,
     // garantías, vigencias, estado y comportamiento comercial ajustable). Los datos de bureau FIRMES (CMF/ACHEF/TGR/DICOM
     // mora y castigos) NO cambian → sus reglas (no re-evaluables) siguen en excepción/rechazo. Es el mock del origen:
-    // lo pide sólo ese gesto (regla 71), no cualquier versión con número mayor que uno.
+    // lo pide sólo ese gesto (regla 72), no cualquier versión con número mayor que uno.
     Object.assign(vars, {
       pagareFirmado: true,
       lineaExt: false,
@@ -23911,7 +23911,7 @@ function snapVersionCli(deal, rev, opts) {
   const fsOp = (deal && deal.facturasOp) || [];
   let linea = null,
     verificacion = null;
-  // Un motor que REVIENTA se anota y la versión no se emite (regla 71): cinco secciones o ninguna. Sin facturas no hay
+  // Un motor que REVIENTA se anota y la versión no se emite (regla 72): cinco secciones o ninguna. Sin facturas no hay
   // nada que evaluar en línea, verificación, giro ni pricing: `null` no es un fallo, es «vacío» (caso 124).
   const fallidos = [];
   // Aceptada en adelante, una versión nueva no re-asigna: RECORTA la anterior (ver recortarAsignacion).
@@ -23920,7 +23920,7 @@ function snapVersionCli(deal, rev, opts) {
   const lineaPrev = vPrev.length ? vPrev[vPrev.length - 1].linea : null;
   try {
     if (o.linea !== undefined)
-      linea = o.linea; // el rechazo del comité trae su recorte (regla 68)
+      linea = o.linea; // el rechazo del comité trae su recorte (regla 69)
     else if (aceptada && lineaPrev) {
       linea = recortarAsignacion(
         lineaPrev,
@@ -23978,7 +23978,7 @@ function snapVersionCli(deal, rev, opts) {
     verificacion = null;
     fallidos.push("verificación: " + ((e && e.message) || e));
   }
-  // REGLA 71 · Los otros dos motores, en la misma versión: el GIRO (GE/GN por deudor sobre ESTA asignación, que es la
+  // REGLA 72 · Los otros dos motores, en la misma versión: el GIRO (GE/GN por deudor sobre ESTA asignación, que es la
   // que se simuló) y el PRICING (con qué modo de tasa y qué condiciones se simuló). Antes corrían sólo en el render.
   let giro = null,
     pricing = null;
@@ -24068,7 +24068,7 @@ const revOtorgActual = (deal, versiones) => {
   const todas = versiones || (typeof SIM_VERSIONS !== "undefined" ? SIM_VERSIONS : {}) || {};
   return Math.max(0, ((deal && todas[deal.id]) || []).length - 1);
 };
-// ── Regla 71 (ADR-0013) · UN EVENTO DE EVALUACIÓN: CINCO MOTORES, UNA VERSIÓN CON CINCO SECCIONES, O NINGUNA ────
+// ── Regla 72 (ADR-0013) · UN EVENTO DE EVALUACIÓN: CINCO MOTORES, UNA VERSIÓN CON CINCO SECCIONES, O NINGUNA ────
 // «Al presionar simular se debe generar un evento que gatille todas las evaluaciones de los motores […] Cada motor debiera
 // tener una versión como el motor de otorgamiento y siempre debieran haber la misma cantidad de ejecuciones en todos los
 // motores» (el usuario, 22-09-2026). Simular, «Re-evaluar operación» y «Re-evaluación de la simulación» son el MISMO
@@ -24124,7 +24124,7 @@ function evaluarOperacion(deal, usuario, opts) {
   // Las excepciones ya resueltas por los apoderados (VISADO_STATE) CONSERVAN su decisión: re-evaluar trae datos
   // frescos del origen y no re-abre trabajo hecho ni pierde la excepción si la API devolviera el valor original.
   // Lo único que cambia es la que la versión nueva YA NO LEVANTA: se marca «ya no aplica desde la versión N»
-  // —solicitud, visado, tarea e hilo—, no se borra (regla 69, ADR-0016).
+  // —solicitud, visado, tarea e hilo—, no se borra (regla 70, ADR-0016).
   const yaNoAplican = marcarExcepcionesQueYaNoAplican(deal, nv.v);
   if (typeof registrarAuditoria === "function")
     registrarAuditoria({
@@ -24146,7 +24146,7 @@ function evaluarOperacion(deal, usuario, opts) {
 // «Re-evaluación de la simulación» (tab Otorgamiento): el mismo evento, con el origen actualizado —el mock de la API
 // que regulariza las variables re-evaluables tras la firma—. Una operación que nunca simuló (fixtures, legado) recibe
 // antes su evaluación de partida, para que el diff tenga contra qué compararse; en el producto la v1 la emite
-// «Simular la oferta» (regla 71).
+// «Simular la oferta» (regla 72).
 function reevaluarCliente(deal, usuario) {
   const vs = repoSimVersions.get(deal.id) || [];
   if (!vs.length) evaluarOperacion(deal, usuario, { origen: "Evaluación inicial (simulación)", motivo: "simulacion" });
@@ -24157,7 +24157,7 @@ function reevaluarCliente(deal, usuario) {
   });
   return r.version;
 }
-// ── Regla 69 (ADR-0016) · LA EXCEPCIÓN QUE LA VERSIÓN N YA NO LEVANTA SE MARCA, NO SE BORRA ──────────────────
+// ── Regla 70 (ADR-0016) · LA EXCEPCIÓN QUE LA VERSIÓN N YA NO LEVANTA SE MARCA, NO SE BORRA ──────────────────
 // Cuando una re-evaluación deja de levantar una excepción que ya estaba solicitada o visada, el criterio pasa a
 // cumplido y ANTES el visado, la solicitud, la tarea y el hilo quedaban huérfanos: aprobados sobre una regla que ya
 // no gatilla, indistinguibles de una aprobación vigente. El usuario (22-09-2026): «no debería quedar huérfano,
@@ -24233,7 +24233,7 @@ function excepcionesQueYaNoAplican(items, sol, st, det, version, fecha) {
 }
 // LA MUTACIÓN sólo escribe lo que la decisión dice, y avisa: los tres repositorios, la tarea del aprobador (cerrada
 // con el motivo), el hilo «Aprobación de excepciones» (mensaje del sistema; se termina cuando ya no queda ninguna
-// excepción por visar en la operación), la bitácora y la auditoría. La llama `evaluarOperacion` tras emitir la versión (regla 71).
+// excepción por visar en la operación), la bitácora y la auditoría. La llama `evaluarOperacion` tras emitir la versión (regla 72).
 function marcarExcepcionesQueYaNoAplican(deal, version) {
   if (!deal || deal.id == null) return [];
   const sol = repoSolicitudExc.get(deal.id) || {},
@@ -24358,7 +24358,7 @@ function visadoDealCalc(deal, visado, estado) {
   // Sin visado inyectado se cae al de la app: es la comodidad de los call sites, no una dependencia.
   const st = visado || (typeof VISADO_STATE !== "undefined" && deal && VISADO_STATE[deal.id]) || {};
   const excRech = exc.filter((e) => st[e.stKey] === "rechazado");
-  const excPend = exc.filter((e) => excSinVisar(st, e.stKey)); // la marcada «ya no aplica» no cuenta como decisión (regla 69)
+  const excPend = exc.filter((e) => excSinVisar(st, e.stKey)); // la marcada «ya no aplica» no cuenta como decisión (regla 70)
   const rechFirme = rech.filter((r) => !r.reev); // rechazos definitivos → pérdida
   const rechReev = rech.filter((r) => r.reev); // rechazos re-evaluables → NO pérdida (el dato puede cambiar)
   // `estadoAgregado`, no `estado`: el parámetro `estado` es el bag de entrada inyectado. Llamar igual
@@ -24590,13 +24590,13 @@ function controlesIntegracion(deal, estado) {
   }
   const pendVerif = verifResumenDeal(deal, estado).pend;
   if (pendVerif > 0) {
-    // La marcada «no verificada» que sigue en la oferta también cuenta acá (regla 70): el control la nombra y dice qué
+    // La marcada «no verificada» que sigue en la oferta también cuenta acá (regla 71): el control la nombra y dice qué
     // tiene que hacer el ejecutivo, porque una llamada más no la va a destrabar.
     const issV = issueVerificacion(deal, estado);
     faltas.push({
       codigo: "VER-01",
       titulo: "Verificación incompleta",
-      detalle: `${pendVerif} factura(s) esperan la verificación telefónica con el deudor${issV ? ` · ${issV.n} marcada(s) no verificada(s): el ejecutivo tiene que retirarlas, re-simular y volver a publicar${issV.sii ? ` (${issV.sii} inhabilitada(s) por el SII: reclamo, nota de crédito o cesión a otro, regla 74)` : ""}` : ""}`,
+      detalle: `${pendVerif} factura(s) esperan la verificación telefónica con el deudor${issV ? ` · ${issV.n} marcada(s) no verificada(s): el ejecutivo tiene que retirarlas, re-simular y volver a publicar${issV.sii ? ` (${issV.sii} inhabilitada(s) por el SII: reclamo, nota de crédito o cesión a otro, regla 75)` : ""}` : ""}`,
     });
   }
   // LA LÍNEA, FACTURA POR FACTURA. El cupo se asigna al armar la oferta y lo que no cabe sale marcado
@@ -25242,7 +25242,7 @@ function girosDeDeal(deal, estado) {
     const n = x.deudor.nombre || x.deudor.name || x.deudor;
     excepcionDeudor[n] = true;
   });
-  // 3) Líneas, POR DEUDOR (ADR-0017, regla 66): las facturas que la asignación dejó en REQUIERE_COMITE marcan a
+  // 3) Líneas, POR DEUDOR (ADR-0017, regla 67): las facturas que la asignación dejó en REQUIERE_COMITE marcan a
   //    su deudor. La asignación es la de la última VERSIÓN de la operación —la que se simuló—, salvo que el
   //    llamador pase la suya (`est.linea`; `null` explícito = sin asignación, ningún deudor a comité).
   const linea = est.linea !== undefined ? est.linea : lineaDeVersion(deal);
@@ -25291,7 +25291,7 @@ function girosDeDeal(deal, estado) {
 // Se cuentan las llamadas registradas, los veredictos congelados y los vetos de esta operación: son
 // los tres commits que pueden mover el veredicto sin pasar por el visado.
 let _GIRO_LISTA = {};
-// EL GIRO DE UNA VERSIÓN (regla 71): el mismo cálculo que la lista, sin memo y con la asignación de línea que se acaba
+// EL GIRO DE UNA VERSIÓN (regla 72): el mismo cálculo que la lista, sin memo y con la asignación de línea que se acaba
 // de evaluar (`estado.linea`), porque el memo de abajo va indexado por operación y firmaría con la línea anterior.
 function giroDeVersion(deal, facturas, estado) {
   const congR = giroCongelado(deal, estado);
@@ -25303,7 +25303,7 @@ function giroDeVersion(deal, facturas, estado) {
   const docs = fs.map((f, i) => ({ id: f.folio || f.id || "f" + i, deudor: f.deudor, giro: r.asignado[i] }));
   return asignarGiros(girosDeDeal(deal, { ...(estado || {}), facturas: fs, prorrateo: { filas: docs, montoGirar: giroTotal } }), {});
 }
-// LA SELECCIÓN DE LA TASA DEL NEGOCIO, en un solo sitio (regla 71): la usan el panel de condiciones del detalle y la
+// LA SELECCIÓN DE LA TASA DEL NEGOCIO, en un solo sitio (regla 72): la usan el panel de condiciones del detalle y la
 // versión de pricing, para que lo que se muestra y lo que se versiona no se separen. Política del tenant
 // (`tasaModo`): «riesgo» = siempre la ponderada por riesgo del deudor · «ultima» = la del último negocio cursado
 // del cliente (si existe) · «mayor» = la mayor de ambas (no ofertar bajo la última tasa cursada).
@@ -25314,7 +25314,7 @@ function tasaDelNegocio(deal, tasaRiesgo, cfg) {
   const usaUltNeg = !!ultNeg && (modo === "ultima" || (modo === "mayor" && tasaRiesgo < ultNeg.tasa));
   return { modo, ultNeg, usaUltNeg, tasaEfectiva: usaUltNeg ? ultNeg.tasa : tasaRiesgo };
 }
-// LA VERSIÓN DE PRICING (regla 71, M-36): con qué modo de tasa se simuló y qué condiciones quedaron asignadas —tasa
+// LA VERSIÓN DE PRICING (regla 72, M-36): con qué modo de tasa se simuló y qué condiciones quedaron asignadas —tasa
 // ponderada por riesgo, la del último negocio si mandó, la tasa de descuento del negocio, comisión, anticipo y gastos
 // del tenant— y cuánto se gira. Es trazabilidad: no cambia lo que el sistema decide, y la huella O05 sigue fijando el
 // paquete y no el precio (regla 23, caso 85).
@@ -25422,7 +25422,7 @@ function giroDeal(deal, estado) {
   return { ...asignarGiros(girosDeDeal(deal, est), { tipos: est.tiposGiro }), congelado: false };
 }
 
-let VISADO_STATE = repoVisado.all(); // { [dealId]: { [stKey]: "aprobado"|"rechazado"|"no_aplica" } } — resolución de excepciones; `no_aplica` = marcada por el sistema (regla 69), NO es decisión
+let VISADO_STATE = repoVisado.all(); // { [dealId]: { [stKey]: "aprobado"|"rechazado"|"no_aplica" } } — resolución de excepciones; `no_aplica` = marcada por el sistema (regla 70), NO es decisión
 let VISADO_DETALLE = repoVisadoDetalle.all(); // { [dealId]: { [stKey]: { msg, archs:[], por, fecha, decision?, noAplica?:{desdeVersion,por,fecha}, anteriores?:[] } } } — comentario/respaldo de la DECISIÓN del apoderado
 // Solicitud de aprobación de una excepción que el EJECUTIVO envía al apoderado responsable (N1–N5):
 // comentario + archivos de respaldo. Precede a la decisión (VISADO_STATE/DETALLE) que toma el apoderado.
@@ -25431,7 +25431,7 @@ let SOLICITUD_EXC = repoSolicitudExc.all(); // { [dealId]: { [stKey]: { comentar
 // factura de la verificación telefónica antes del giro. { [dealId]: { [facturaId]: { por, fecha, msg } } }
 let VERIF_EXC = repoVerifExc.all();
 let VERIF_TEL = repoVerifTel.all(); // { [dealId]: { [facturaId]: { por, fecha } } }
-let NO_CONFIRMADAS = repoNoConfirmadas.all(); // { [dealId]: { [facturaId]: { folio, monto, deudor, rutRecep, por, fecha, motivo } } } — la marca «no verificada» (regla 70): la factura puede SEGUIR en la oferta hasta que el ejecutivo la retire; el veto no se levanta
+let NO_CONFIRMADAS = repoNoConfirmadas.all(); // { [dealId]: { [facturaId]: { folio, monto, deudor, rutRecep, por, fecha, motivo } } } — la marca «no verificada» (regla 71): la factura puede SEGUIR en la oferta hasta que el ejecutivo la retire; el veto no se levanta
 // Folios YA COMPROMETIDOS en una operación, por cliente: { [rutEmisor]: { [folio]: dealId } }. Es lo
 // único de `estadoCandidata` que NO sale de un activo, porque no es un hecho del SII sino de este
 // sistema: qué documento tomó ya otra operación nuestra. Antes también se sorteaba por hash, así que
@@ -26264,7 +26264,7 @@ function avisarCierreNegocio(deal, excPend, pendVerif) {
   hiloEnviar(h, CODE_SISTEMA, texto, null);
   return h;
 }
-// REGLA 70 (ADR-0018) · LA VERIFICACIÓN FALLIDA AVISA AL EJECUTIVO COMERCIAL, no retira. El molde es el aviso del
+// REGLA 71 (ADR-0018) · LA VERIFICACIÓN FALLIDA AVISA AL EJECUTIVO COMERCIAL, no retira. El molde es el aviso del
 // cierre (regla 50): un hilo por operación, remitente el SISTEMA, destinatario el ejecutivo dueño; dice la operación, el
 // deudor, cada folio, que no se cursará mientras sigan en la oferta, y qué tiene que hacer. Sin facturas marcadas no hay
 // aviso. Se llama FUERA de todo updater de React (regla 22): un envío ahí adentro sale duplicado.
@@ -26272,7 +26272,7 @@ function avisarNoVerificadas(deal, facs, motivo) {
   const fs = (facs || []).filter(Boolean);
   if (!deal || !fs.length) return null;
   const ejec = deal.exec && USERS[deal.exec] ? deal.exec : null;
-  // REGLA 74 (ADR-0021) · Cuando quien inhabilita es el SII, el hilo y el texto lo dicen: no es una llamada que faltó, es
+  // REGLA 75 (ADR-0021) · Cuando quien inhabilita es el SII, el hilo y el texto lo dicen: no es una llamada que faltó, es
   // que el deudor no va a pagar ese documento (reclamado, anulado o cedido a otro). La salida es la misma.
   const sii = fs.filter((f) => f && f.inhabilitada);
   const asunto = sii.length ? `Documentos inhabilitados por el SII · ${deal.id}` : `Verificación fallida · ${deal.id}`;
@@ -26301,14 +26301,14 @@ function excepcionesSinComentario(deal) {
       .filter((it) => it.disp === "excepcion" && excSinVisar(st, it.stKey))
       // Resuelta = solicitada CON justificación: comentario, respaldo, o la declaración explícita de
       // que no hay comentarios adicionales. El silencio no cuenta. La solicitud marcada «ya no aplica» no
-      // justifica la de hoy (regla 69): si la regla volvió a levantar, se solicita de nuevo.
+      // justifica la de hoy (regla 70): si la regla volvió a levantar, se solicita de nuevo.
       .filter((it) => {
         const s = solVigente(sol, it.stKey);
         return !s || (!(s.comentario || "").trim() && !(s.archivos && s.archivos.length) && !s.sinComentarios);
       })
   );
 }
-// COMPUERTA DEL CIERRE (regla 65, M-19): NINGUNA EXCEPCIÓN SIN JUSTIFICAR. Es exigencia de la MUTACIÓN —`cerrarOferta`—
+// COMPUERTA DEL CIERRE (regla 66, M-19): NINGUNA EXCEPCIÓN SIN JUSTIFICAR. Es exigencia de la MUTACIÓN —`cerrarOferta`—
 // y no sólo del botón de `ModalCurse` (regla 30): al cierre se llega también desde el asistente de alta y desde el
 // tubo, y la pantalla que apaga un botón no es el control (regla 24). Recibe las excepciones mudas ya calculadas
 // (`excepcionesSinComentario`) para ser pura, y siempre dice por qué bloquea, como `giroCursable`.
@@ -26362,7 +26362,7 @@ function ampliarSolicitudExc(deal, x, execCode, comentario, archivos) {
 }
 function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinComentarios) {
   if (!x || !x.stKey || !x.regla) return;
-  // SIN JUSTIFICACIÓN NO SE SOLICITA (regla 65, CA-4 de HU-25): comentario, respaldo o la declaración explícita de que
+  // SIN JUSTIFICACIÓN NO SE SOLICITA (regla 66, CA-4 de HU-25): comentario, respaldo o la declaración explícita de que
   // no hay comentarios. Una solicitud muda le pide al apoderado que decida sin saber sobre qué. El formulario del tab
   // ya lo exigía (regla 30); acá lo exige la escritura, que es a la que llegan los tres caminos.
   const justificada = !!((comentario || "").trim() || (archivos && archivos.length) || sinComentarios);
@@ -26374,7 +26374,7 @@ function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinCome
     return { ok: false, motivo: "La solicitud de excepción necesita un comentario, un respaldo o la declaración de que no hay comentarios adicionales." };
   }
   const nr = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", x.nivel || 1);
-  // La solicitud anterior marcada «ya no aplica» (regla 69) no se pisa ni se reactiva: la nueva la lleva como historia
+  // La solicitud anterior marcada «ya no aplica» (regla 70) no se pisa ni se reactiva: la nueva la lleva como historia
   // en `anteriores`, cada una con la versión en la que se pidió. Y guarda de qué regla y deudor es, porque cuando el
   // deudor sale de la operación la clave es lo único que queda para nombrarla.
   const previa = (repoSolicitudExc.get(deal.id) || {})[x.stKey];
@@ -26445,7 +26445,7 @@ function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinCome
     para: dests.map((c) => (USERS[c] || c).split(" · ")[0]),
     ops: [deal.id],
     nodo: "Otorgamiento",
-    stKey: x.stKey, // la tarea conoce su excepción: es lo que permite cerrarla cuando la versión ya no la levanta (regla 69)
+    stKey: x.stKey, // la tarea conoce su excepción: es lo que permite cerrarla cuando la versión ya no la levanta (regla 70)
   });
 }
 // Fase de otorgamiento de una oportunidad: "preevaluacion" | "evaluacion" | "finalizada" | null.
@@ -26552,7 +26552,7 @@ function hiloTerminar(h, code) {
   guardarHilos();
   if (typeof registrarAuditoria === "function")
     registrarAuditoria({
-      usuario: nombreEnHilo(code), // el sistema también termina hilos (regla 69) y no está en USERS
+      usuario: nombreEnHilo(code), // el sistema también termina hilos (regla 70) y no está en USERS
       modulo: "Mensajería interna",
       accion: "Conversación terminada",
       glosa: `${h.cliente || ""}${h.dealId ? " · " + h.dealId : ""}`.trim(),
@@ -26688,7 +26688,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
         arch: arch || null,
         por: actorEtiqueta(usuario),
         fecha: new Date().toLocaleString("es-CL"),
-        ...historiaVisado((repoVisadoDetalle.get(deal.id) || {})[k]), // regla 69: nada se borra
+        ...historiaVisado((repoVisadoDetalle.get(deal.id) || {})[k]), // regla 70: nada se borra
       },
     };
     // OTG-01 · SE COMPRUEBA LA ATRIBUCIÓN ANTES DE ESCRIBIR, no sólo al dibujar el botón. Quien visa
@@ -27071,7 +27071,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                         const _hdr = _i === 0 || grpKey(excSorted[_i - 1]) !== grpKey(x);
                         const key = o.deal.id + "-" + x.stKey;
                         const f = form[key] || {};
-                        // «Ya no aplica» vuelve a ser pendiente si la regla levantó de nuevo (regla 69).
+                        // «Ya no aplica» vuelve a ser pendiente si la regla levantó de nuevo (regla 70).
                         const ee = excSinVisar(VISADO_STATE[o.deal.id], x.stKey) ? "pendiente" : VISADO_STATE[o.deal.id][x.stKey];
                         const det = (VISADO_DETALLE[o.deal.id] || {})[x.stKey];
                         const niv = x.nivel || 1;
@@ -31347,7 +31347,7 @@ function facturasDeCandidata(cand, anclaISO) {
     const fecha = d.toISOString().slice(0, 10);
     const monto = Math.max(50000, Math.round((totalCLP * pesos[i]) / sumaPesos));
     const exenta = r() < 0.1;
-    // El acuse del receptor NO se inventa (regla 72): es una bandera del DTE que sólo el A1 trae, y un candidato no tiene
+    // El acuse del receptor NO se inventa (regla 73): es una bandera del DTE que sólo el A1 trae, y un candidato no tiene
     // documentos en el A1. La columna «Aceptada/Reclamada» del Excel se retiró con el sorteo que la llenaba.
     const nc = r() < 0.07;
     const cedida = r() < pCede;
@@ -39349,7 +39349,7 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
   const marcarHecha = (r) => {
     if (r.kind === "task") {
       r.task.hecha = !r.task.hecha;
-      if (!r.task.hecha) delete r.task.cierre; // reabrir a mano borra el cierre del sistema (regla 69)
+      if (!r.task.hecha) delete r.task.cierre; // reabrir a mano borra el cierre del sistema (regla 70)
     }
     bump();
   };
@@ -39369,7 +39369,7 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
   const estadoPill = (r) => {
     if (r.kind === "linea") return r.sow ? { l: "Asegurar SOW", c: "#C2410C", bg: "#FFF7ED" } : { l: "Urgente para el curse", c: "#2563EB", bg: "#EFF6FF" };
     if (r.kind === "prio") return r.at.atendida ? { l: r.at.label, c: r.at.col, bg: r.at.bg } : { l: "Por atender", c: "#C2410C", bg: "#FFF7ED" };
-    if (r.hecha && r.kind === "task" && r.task.cierre) return { l: "Cerrada por el sistema", c: "#4B5563", bg: "#F3F4F6" }; // regla 69
+    if (r.hecha && r.kind === "task" && r.task.cierre) return { l: "Cerrada por el sistema", c: "#4B5563", bg: "#F3F4F6" }; // regla 70
     return r.hecha ? { l: "Hecha", c: "#16A34A", bg: "#F0FDF4" } : { l: "Pendiente", c: "#703EFF", bg: "#F1ECFF" };
   };
   const vistas = [
@@ -39735,7 +39735,7 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
                         </>
                       )}
                     </div>
-                    {/* REGLA 69 · Una tarea que cerró el sistema dice por qué: «ya no aplica desde la versión N». */}
+                    {/* REGLA 70 · Una tarea que cerró el sistema dice por qué: «ya no aplica desde la versión N». */}
                     {r.kind === "task" && r.task.cierre && (
                       <div className="mt-2 t11" style={{ color: C.sub, lineHeight: 1.4 }}>
                         Cerrada por el {r.task.cierre.por} · {r.task.cierre.fecha}: {r.task.cierre.motivo}.
@@ -42423,7 +42423,7 @@ function solicitudComiteDeOferta(deal, ev, ejecutivo, aprobadaVigente = 0) {
     automatica: true,
   };
 }
-// EL RECHAZO DEL COMITÉ, puro (ADR-0015, regla 68): qué le pasa a la operación cuando la API 3 devuelve «Rechazada»
+// EL RECHAZO DEL COMITÉ, puro (ADR-0015, regla 69): qué le pasa a la operación cuando la API 3 devuelve «Rechazada»
 // para las líneas de detalle de su solicitud. Recibe el negocio, la solicitud y sus versiones; devuelve qué facturas se
 // retiran (las del deudor cuya línea se rechazó), qué queda, si la operación se pierde (no queda ninguna: causa
 // «Línea rechazada por el comité», regla 5) y, si no, el patch que la REABRE —vuelve a Oferta con `enEdicion`, y con
@@ -42443,7 +42443,7 @@ function rechazoComiteDecision(deal, sol, versiones) {
   const vs = versiones || [];
   const prev = vs.length ? vs[vs.length - 1] : null;
   const origen = `Comité · línea rechazada (${sol.idProceso || "—"}) · ${retiradas.length} factura(s) del deudor retirada(s)`;
-  // La versión del rechazo es una versión COMPLETA (regla 71: cinco secciones): otorgamiento, verificación, giro y
+  // La versión del rechazo es una versión COMPLETA (regla 72: cinco secciones): otorgamiento, verificación, giro y
   // pricing se evalúan sobre el paquete que queda, y la LÍNEA es el recorte de la anterior, nunca una re-asignación.
   const dealTrasRetiro = { ...deal, facturasOp: quedan, facturas: quedan.length, monto: +quedan.reduce((a, f) => a + (f.monto || 0), 0).toFixed(1) };
   const version =
@@ -43357,7 +43357,7 @@ function deudoresSolicitadosLinea(rutCliente) {
 function api3EstadoProceso(idProceso) {
   const s = SOLICITUDES_LINEA.find((x) => x.idProceso === idProceso);
   if (!s) return null;
-  // EL COMITÉ ES EXTERNO Y RESPONDE ACEPTACIÓN O RECHAZO (ADR-0015, regla 68): «Aprobada», «Observada» o «Rechazada»,
+  // EL COMITÉ ES EXTERNO Y RESPONDE ACEPTACIÓN O RECHAZO (ADR-0015, regla 69): «Aprobada», «Observada» o «Rechazada»,
   // como el contrato (EN_GESTION → … → APROBADA | OBSERVADA | RECHAZADA). El mock resuelve por el id, y el desenlace
   // se escribe POR LÍNEA DE DETALLE —que es lo que el comité aprueba o rechaza—; acá todas las líneas de una
   // solicitud comparten el desenlace, y el manejador del rechazo las recorre una a una igual.
@@ -45899,7 +45899,7 @@ function LineasView({ soloExec, usuario, onRechazo }) {
     api2ListarProcesos().forEach((s) => {
       s.refrescos = (s.refrescos || 0) + 1;
       const est = api3EstadoProceso(s.idProceso);
-      // El rechazo del comité se APLICA al consultarlo (ADR-0015, regla 68): retira las facturas del deudor y reabre.
+      // El rechazo del comité se APLICA al consultarlo (ADR-0015, regla 69): retira las facturas del deudor y reabre.
       if (est === "Rechazada" && onRechazo && !s.rechazoAplicado) onRechazo(s);
     });
     setBTick((t) => t + 1);
@@ -47628,7 +47628,7 @@ export default function PipelineComercial() {
     return () => clearInterval(t);
   }, [streaming, cfgT.cronMs]);
   const [recibidas, setRecibidas] = useState(0);
-  const [actualizadas, setActualizadas] = useState(0); // notificaciones posteriores a la creación aplicadas (regla 73)
+  const [actualizadas, setActualizadas] = useState(0); // notificaciones posteriores a la creación aplicadas (regla 74)
   const actDTERef = useRef({ total: 0, acuses: 0, reclamos: 0, notasCredito: 0, otros: 0, enOportunidades: 0, inhabilitadas: 0 });
   const [acumulado, setAcumulado] = useState([]); // facturas calificadas esperando la corrida
   const [corridas, setCorridas] = useState(0);
@@ -47999,7 +47999,7 @@ export default function PipelineComercial() {
     );
     setSelected(null);
   };
-  // EL RECHAZO DEL COMITÉ (ADR-0015, regla 68): lo decide `rechazoComiteDecision` y acá sólo se ESCRIBE. Lo dispara
+  // EL RECHAZO DEL COMITÉ (ADR-0015, regla 69): lo decide `rechazoComiteDecision` y acá sólo se ESCRIBE. Lo dispara
   // «Consultar estados» de Líneas › Solicitudes cuando la API 3 devuelve «Rechazada»; cada solicitud se aplica UNA vez.
   const aplicarRechazoComite = (sol) => {
     if (!sol || sol.rechazoAplicado) return null;
@@ -48471,7 +48471,7 @@ export default function PipelineComercial() {
       });
       return gChk;
     }
-    // NINGUNA EXCEPCIÓN SIN JUSTIFICAR (regla 65, M-19). `ModalCurse` apaga el botón con la misma cuenta (regla 30);
+    // NINGUNA EXCEPCIÓN SIN JUSTIFICAR (regla 66, M-19). `ModalCurse` apaga el botón con la misma cuenta (regla 30);
     // ésta es la exigencia del backend: la mutación la vuelve a hacer y, si falla, no escribe nada.
     const mudas = dChk ? excepcionesSinComentario(dChk) : [];
     const eChk = compuertaExcepcionesMudas(mudas);
@@ -49494,12 +49494,12 @@ export default function PipelineComercial() {
       }
     };
     window.addEventListener("message", onMsg);
-    // REGLA 71 · La versión que el DETALLE emite al simular vive en el storage; el tubo se entera por el evento `storage`
+    // REGLA 72 · La versión que el DETALLE emite al simular vive en el storage; el tubo se entera por el evento `storage`
     // del navegador —que dispara cuando la escritura de la otra pestaña ya es visible— y relee el repositorio para que
     // la fila (`lineaDeVersion`, `giroResumenDeal`) lea la MISMA asignación que se acaba de simular. Releer dentro del
     // aviso `nex-simulado` no alcanza: el postMessage llega antes de que el storage de la otra pestaña se propague
     // (medido el 23-09-2026: el tubo releía y seguía en 0 versiones). Se re-emiten sólo las filas con versión.
-    // REGLA 74 · El veto que escribió el tubo —el SII inhabilitó un documento de una oferta cerrada o firmada— lo tiene
+    // REGLA 75 · El veto que escribió el tubo —el SII inhabilitó un documento de una oferta cerrada o firmada— lo tiene
     // que ver el detalle ya abierto: se relee el repositorio por el evento `storage`, como las versiones.
     const onStorageVeto = (e) => {
       if (!e || e.key !== "pc_repo_" + repoNoConfirmadas.nombre) return;
@@ -49730,7 +49730,7 @@ export default function PipelineComercial() {
     CRON_MS = cfgT.cronMs,
     DIAS_SEMANA = cfgT.diasSemana,
     CONT_MS = 600;
-  // El reloj simulado (ADR-0019, regla 67): cada corrida es una hora del tenant, del reinicio al corte.
+  // El reloj simulado (ADR-0019, regla 68): cada corrida es una hora del tenant, del reinicio al corte.
   const reloj = relojSimulado(corridas, cfgT);
   const dia = reloj.dia;
   const horaDia = reloj.hora;
@@ -49742,7 +49742,7 @@ export default function PipelineComercial() {
     }
     const t = setTimeout(() => {
       const lote = streamQueue.slice(0, STREAM_LOTE);
-      // Las actualizaciones del A1 (regla 73) no se clasifican: parchan el documento donde ya vive —acumulado,
+      // Las actualizaciones del A1 (regla 74) no se clasifican: parchan el documento donde ya vive —acumulado,
       // bandeja, oportunidades— y la bitácora de la oportunidad dice qué llegó. Lo demás del lote son facturas nuevas.
       const actualizaciones = lote.filter((e) => e && e.tipo === "actualizacion");
       const facturas = actualizaciones.length ? lote.filter((e) => !(e && e.tipo === "actualizacion")) : lote;
@@ -49809,7 +49809,7 @@ export default function PipelineComercial() {
     }, 350);
     return () => clearTimeout(t);
   }, [streaming, streamQueue, rules]);
-  // Aplica un lote de actualizaciones del A1 (regla 73): la más nueva por documento manda dentro del lote; el
+  // Aplica un lote de actualizaciones del A1 (regla 74): la más nueva por documento manda dentro del lote; el
   // acumulado y la bandeja parchan su documento; cada oportunidad aplica lo suyo (`aplicarActualizacionDTE`). Los
   // contadores los reporta la corrida siguiente en su línea de bitácora.
   const aplicarActualizacionesDTE = (acts) => {
@@ -49835,8 +49835,8 @@ export default function PipelineComercial() {
     setAcumulado(parchar);
     setStreamFeed(parchar);
     // LAS INHABILITACIONES SE DECIDEN ACÁ, FUERA DE TODO UPDATER (regla 22), sobre la foto vigente del tubo: el veto de
-    // la regla 70 y el aviso al ejecutivo son efectos —storage y mensajería— y un updater puede correr dos veces. El
-    // parche del estado va después, por su updater, y es idempotente (regla 73). Un veto por motivo y operación.
+    // la regla 71 y el aviso al ejecutivo son efectos —storage y mensajería— y un updater puede correr dos veces. El
+    // parche del estado va después, por su updater, y es idempotente (regla 74). Un veto por motivo y operación.
     for (const d of dealsRef.current || []) {
       const r = aplicarEventosADeal(d, evs);
       c.enOportunidades += r.n;
@@ -50152,9 +50152,9 @@ export default function PipelineComercial() {
     // PROCESO EN BACKGROUND (server-side ready): la llegada de facturas nuevas NO se aplica de forma
     // síncrona. Se emite el evento (equivalente al push por socket del backend) y las facturas entran
     // al pool disponible tras una latencia proporcional al volumen de documentos — anticipando
-    // operaciones con miles de facturas. No re-simula ni marca nada (regla 14, regla 71).
+    // operaciones con miles de facturas. No re-simula ni marca nada (regla 14, regla 72).
     const idsWarn = Object.keys(warn);
-    // Las actualizaciones del A1 aplicadas desde la corrida anterior (regla 73) van en la misma línea, y el contador
+    // Las actualizaciones del A1 aplicadas desde la corrida anterior (regla 74) van en la misma línea, y el contador
     // vuelve a cero: una línea por evento habría sido ruido (25.000 en un stream entero).
     const act = { ...actDTERef.current };
     actDTERef.current = { total: 0, acuses: 0, reclamos: 0, notasCredito: 0, otros: 0, enOportunidades: 0, inhabilitadas: 0 };
@@ -50163,10 +50163,10 @@ export default function PipelineComercial() {
       "motor",
       `Corrida del inbound: ${nuevos.length} oportunidad(es) nueva(s), ${idsWarn.length} actualizada(s) con facturas nuevas, ${pendientes.length} documento(s) re-encolados${
         act.total
-          ? `; ${act.total} actualización(es) del SII (${act.acuses} acuses · ${act.reclamos} reclamos · ${act.notasCredito} notas de crédito), ${act.enOportunidades} aplicada(s) en oportunidades, ${act.inhabilitadas} documento(s) inhabilitado(s) en ofertas cerradas o firmadas (regla 74)`
+          ? `; ${act.total} actualización(es) del SII (${act.acuses} acuses · ${act.reclamos} reclamos · ${act.notasCredito} notas de crédito), ${act.enOportunidades} aplicada(s) en oportunidades, ${act.inhabilitadas} documento(s) inhabilitado(s) en ofertas cerradas o firmadas (regla 75)`
           : ""
       }`,
-      // El intervalo del job en producción viaja en la traza (regla 67): en la demo la corrida es cada «hora» simulada.
+      // El intervalo del job en producción viaja en la traza (regla 68): en la demo la corrida es cada «hora» simulada.
       {
         nuevas: nuevos.length,
         conWarning: idsWarn.length,
@@ -50184,7 +50184,7 @@ export default function PipelineComercial() {
       const totalDocs = idsWarn.reduce((s, k) => s + (warn[k].add || 0), 0);
       const latencia = Math.min(6000, cfgT.latenciaBaseMs + totalDocs * cfgT.latenciaPorDocMs); // latencia API + cómputo (config del tenant)
       // Las facturas nuevas NO re-simulan nada (regla 14, ADR-0013): engrosan el pool disponible y la bitácora lo dice
-      // con esas palabras. Los rótulos anteriores anunciaban un recálculo que nunca ocurría (G-09, regla 71).
+      // con esas palabras. Los rótulos anteriores anunciaban un recálculo que nunca ocurría (G-09, regla 72).
       logSys(
         "info",
         "background",
@@ -50669,7 +50669,7 @@ export default function PipelineComercial() {
   };
   const tickCron = () => {
     if (pausaRef.current) return;
-    // La corrida abre oportunidades sólo DENTRO de la ventana del tenant (regla 67): a la hora del corte no se abre
+    // La corrida abre oportunidades sólo DENTRO de la ventana del tenant (regla 68): a la hora del corte no se abre
     // nada —se corta—, y lo que llegue queda acumulado para el reinicio.
     const r = relojSimulado(corridas, cfgT);
     if (r.enVentana) correrProceso();
@@ -50716,7 +50716,7 @@ export default function PipelineComercial() {
   //  • La aprobación del especialista en Otorgamiento → Giro.
   // Lo único periódico es el inbound (toma facturas recibidas y aplica las reglas cada 1 hora).
 
-  // CORTE DEL DÍA (ADR-0019, regla 67): a la hora de corte del tenant, la oportunidad del inbound SIN oferta se
+  // CORTE DEL DÍA (ADR-0019, regla 68): a la hora de corte del tenant, la oportunidad del inbound SIN oferta se
   // ELIMINA —deja de existir para el ejecutivo y para el tubo, y la bitácora del sistema registra el cierre con su id,
   // su cedente y su paquete— y la que TIENE oferta no se toca, cualquiera sea su etapa. «Gestionada» es la que tiene
   // oferta (el ejecutivo la simuló: Oferta o posterior); un paquete elegido sin simular no es oferta todavía. Hasta el
@@ -50761,7 +50761,7 @@ export default function PipelineComercial() {
   };
   // REINICIO DEL DÍA: lo que el corte eliminó vuelve al inbound como EVENTOS, y la corrida de esa hora lo origina de
   // nuevo —id propio, `referencia` a la eliminada, las facturas que tenía más las que llegaron, sin simular y con la
-  // oferta vacía—. No es una reapertura: es una originación (regla 5, regla 67).
+  // oferta vacía—. No es una reapertura: es una originación (regla 5, regla 68).
   const reinicioDia = (nDia) => {
     const evs = pendReinicioRef.current;
     pendReinicioRef.current = [];
@@ -50825,7 +50825,7 @@ export default function PipelineComercial() {
   };
   const reinicioDiaRef = useRef(null);
   reinicioDiaRef.current = reinicioDia;
-  // EL RELOJ DECIDE (regla 67): a la hora de corte se cierra el día y se corta; a la hora de reinicio de un día que no
+  // EL RELOJ DECIDE (regla 68): a la hora de corte se cierra el día y se corta; a la hora de reinicio de un día que no
   // es el primero, lo eliminado vuelve al inbound. Ya no es «cada N corridas»: el conteo sólo se traduce a una hora.
   useEffect(() => {
     const r = relojSimulado(corridas, cfgT);
@@ -51406,7 +51406,7 @@ export default function PipelineComercial() {
       };
     };
     // La foto que leen los closures del MISMO tick se adelanta al render: «Todo lo disponible» incorpora y simula en
-    // un gesto, `setDeals` no ejecuta `upd` en el acto y el evento de la regla 71 leería el paquete anterior (medido el
+    // un gesto, `setDeals` no ejecuta `upd` en el acto y el evento de la regla 72 leería el paquete anterior (medido el
     // 23-09-2026: la v1 salía sin facturas). El ref se vuelve a escribir al renderizar, con lo mismo.
     dealsRef.current = (dealsRef.current || []).map(upd);
     setDeals((prev) => prev.map(upd));
@@ -51453,7 +51453,7 @@ export default function PipelineComercial() {
       };
     };
     // La foto que leen los closures del MISMO tick se adelanta al render: «Todo lo disponible» incorpora y simula en
-    // un gesto, `setDeals` no ejecuta `upd` en el acto y el evento de la regla 71 leería el paquete anterior (medido el
+    // un gesto, `setDeals` no ejecuta `upd` en el acto y el evento de la regla 72 leería el paquete anterior (medido el
     // 23-09-2026: la v1 salía sin facturas). El ref se vuelve a escribir al renderizar, con lo mismo.
     dealsRef.current = (dealsRef.current || []).map(upd);
     setDeals((prev) => prev.map(upd));
@@ -51461,7 +51461,7 @@ export default function PipelineComercial() {
   };
   // SIMULAR: es lo ÚNICO que calcula condiciones comerciales, y sólo cuando el ejecutivo lo pide sobre
   // la selección que dejó. Hasta acá la oportunidad tiene deudores y montos, pero no precio.
-  // REGLA 71 (ADR-0013) · SIMULAR ES EL EVENTO DE EVALUACIÓN: corre los cinco motores y emite la versión —la primera
+  // REGLA 72 (ADR-0013) · SIMULAR ES EL EVENTO DE EVALUACIÓN: corre los cinco motores y emite la versión —la primera
   // simulación, la v1—. Se evalúa FUERA del updater de React (regla 22) sobre la foto del negocio con el paquete
   // simulado; las finanzas se calculan UNA vez y viajan al patch, para que la versión y el negocio digan lo mismo
   // (`calcularFinanzas` mueve el saldo CxC del cliente: dos llamadas darían dos giros distintos).
@@ -51508,7 +51508,7 @@ export default function PipelineComercial() {
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
   };
-  // REGLA 71 · «Re-evaluar operación» es el MISMO evento que simular, sobre el paquete tal como quedó y sólo cuando el
+  // REGLA 72 · «Re-evaluar operación» es el MISMO evento que simular, sobre el paquete tal como quedó y sólo cuando el
   // ejecutivo lo pide (regla 14). Emite la versión siguiente; no toca el negocio.
   const reevaluarOperacion = (id) => {
     const d0 = (dealsRef.current || deals).find((x) => x.id === id) || null;
@@ -51568,7 +51568,7 @@ export default function PipelineComercial() {
       severidad: "media",
     });
   };
-  // REGLA 70 (ADR-0018) · MARCAR «NO VERIFICADA» NO RETIRA. Escribe el veto —es el hecho de la llamada: el deudor no
+  // REGLA 71 (ADR-0018) · MARCAR «NO VERIFICADA» NO RETIRA. Escribe el veto —es el hecho de la llamada: el deudor no
   // la reconoció y no vuelve a entrar (regla 6)—, deja la operación con el issue «facturas no verificadas: no se puede
   // cursar» (VER-01 sigue mandando), lo anota en la bitácora con actor y hora y avisa al ejecutivo comercial por
   // mensajería. Quien retira es el EJECUTIVO: abre la operación («Editar la oferta», que revoca la firma, regla 1),
@@ -51580,7 +51580,7 @@ export default function PipelineComercial() {
     if (!fs.length) return null;
     const d0 = (dealsRef.current || []).find((x) => x.id === id) || deals.find((x) => x.id === id) || null;
     const motivoLbl = (gestion && (gestion.motivoLbl || gestion.motivo)) || "";
-    // REGLA 74 (ADR-0021) · El mismo veto lo escribe el SII cuando la NC, el reclamo o la cesión a otro llegan sobre un
+    // REGLA 75 (ADR-0021) · El mismo veto lo escribe el SII cuando la NC, el reclamo o la cesión a otro llegan sobre un
     // documento de una oferta cerrada, publicada o firmada: el autor es el servicio, no el usuario de la sesión, y el
     // documento viene marcado `inhabilitada`. Es la misma consecuencia que la llamada fallida: no se cursa hasta que el
     // ejecutivo retire, re-evalúe y vuelva a publicar.
@@ -51617,7 +51617,7 @@ export default function PipelineComercial() {
   };
   // Retira una factura de la oferta y la deja disponible como candidata en "Otras facturas".
   // MESA DE VERIFICACIÓN. Se marca por DEUDOR porque una llamada cubre todas sus facturas (regla 6).
-  // «Verificada» registra el contacto de todas ellas; «no verificada» las MARCA y avisa (regla 70):
+  // «Verificada» registra el contacto de todas ellas; «no verificada» las MARCA y avisa (regla 71):
   // no las retira —eso es del ejecutivo— y no emite versión.
   // Registra el resultado del contacto. `confirmadas` es el set de folios que el deudor SÍ confirmó;
   // si no se pasa, se entiende que confirmó todos. Una llamada puede terminar en confirmación PARCIAL
@@ -51698,7 +51698,7 @@ export default function PipelineComercial() {
         exito: !!conf.ok,
       });
     } else {
-      // Marcar NO retira (regla 70): el veredicto se congela y la factura queda vetada y en la oferta,
+      // Marcar NO retira (regla 71): el veredicto se congela y la factura queda vetada y en la oferta,
       // con el issue y el aviso al ejecutivo; sacarla es decisión suya.
       congelarVeredicto(fila, estadoDeudorTras(fila, doc, est));
       marcarNoVerificada(fila.deal.id, [f], gestion);
@@ -51739,7 +51739,7 @@ export default function PipelineComercial() {
   };
   // Marcar todo un deudor DEJA REGISTRO de por qué: el motivo, con quién se habló y el respaldo llegan
   // desde el panel lateral. Antes esto se resolvía con el sí/no de un diálogo de confirmación, así que
-  // la operación bajaba de monto sin un solo dato que explicara la decisión. Desde la regla 70 no baja
+  // la operación bajaba de monto sin un solo dato que explicara la decisión. Desde la regla 71 no baja
   // de monto: queda marcada y el ejecutivo decide qué sacar.
   const noConfirmoDeudor = (fila, gestion) => {
     if (!fila) return;
@@ -51775,7 +51775,7 @@ export default function PipelineComercial() {
   const retirarFacturaOferta = (id, fac, motivo) => {
     if (!fac) return;
     // Retirar de un paquete ya cerrado exige pasar por «Editar la oferta», por lo mismo que agregar. Desde el
-    // 23-09-2026 (regla 70, ADR-0018) NO hay excepción: la verificación fallida ya no retira —marca y avisa—, y quien
+    // 23-09-2026 (regla 71, ADR-0018) NO hay excepción: la verificación fallida ya no retira —marca y avisa—, y quien
     // saca las facturas del deudor no verificado es el ejecutivo, con la operación reabierta (la firma revocada, regla
     // 1) para que el cliente firme la nueva. La versión nueva sale de la simulación siguiente, no de un recorte.
     // `motivo` queda para la bitácora de quien llama.
@@ -51842,7 +51842,7 @@ export default function PipelineComercial() {
       };
     };
     // La foto que leen los closures del MISMO tick se adelanta al render: «Todo lo disponible» incorpora y simula en
-    // un gesto, `setDeals` no ejecuta `upd` en el acto y el evento de la regla 71 leería el paquete anterior (medido el
+    // un gesto, `setDeals` no ejecuta `upd` en el acto y el evento de la regla 72 leería el paquete anterior (medido el
     // 23-09-2026: la v1 salía sin facturas). El ref se vuelve a escribir al renderizar, con lo mismo.
     dealsRef.current = (dealsRef.current || []).map(upd);
     setDeals((prev) => prev.map(upd));

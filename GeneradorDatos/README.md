@@ -50,7 +50,7 @@ que él mismo midió en la entrega anterior (abajo, «La intención de participa
 
 ## El A1 es un flujo de eventos por documento
 
-Desde el 23-09-2026 (ADR-0020, regla 73) el bloque `DTESYNC` no es «una fila por documento con su estado final»
+Desde el 23-09-2026 (ADR-0020, regla 74) el bloque `DTESYNC` no es «una fila por documento con su estado final»
 sino el **log de notificaciones** del servicio, en orden de llegada: cada fila es un evento con `Secuencia` (1..n
 por documento) y `FchNotificacion`. La **creación** (`DTE_SINCRONIZADO`, secuencia 1) trae el documento entero y
 `EstadoDTE` sin banderas; cada cambio posterior (`DTE_ACTUALIZADO`) trae la identidad (`RUTEmisor`, `TipoDTE`,
@@ -63,7 +63,7 @@ el estado del evento más nuevo, cualquiera sea el orden de llegada, y los devue
 activo plano traía); **`expandir(documentos)`** hace lo inverso para la migración; **`validarLog`** dice qué tiene
 que cumplir un log para que plegarlo signifique algo. `derivar` pliega **una vez** y entrega los documentos a los
 módulos en `DTESYNC`: ningún módulo recorre el log. La aplicación pliega con la misma función (`plegarDTE`), y el
-gate `tests/contract/regla_73.test.mjs` las corre a las dos sobre el mismo log y exige el mismo resultado;
+gate `tests/contract/regla_74.test.mjs` las corre a las dos sobre el mismo log y exige el mismo resultado;
 `tests/contract/dtesync.test.mjs` exige que el bloque commiteado valide como log.
 
 La migración fue **`migrar_dtesync_eventos.js`**, una sola vez y commiteada como `migrar_padron.js`: cada documento

@@ -66,7 +66,7 @@ actualización se modeló con lo que el archivo ya traía.
   nuevo; con el pliegue, la creación es el maestro y la actualización trae sólo lo que cambió.
 - **Conservar el orden del archivo (por folio) e intercalar las actualizaciones**: ni cronológico ni por
   folio. El log en orden de llegada es el honesto; la demo paga unos 12 segundos de documentos de mayo al
-  inicio del stream, que la antigüedad (regla 64) excluye a la vista.
+  inicio del stream, que la antigüedad (regla 65) excluye a la vista.
 - **Conservar las fechas de las banderas tal como venían**: todas posteriores al corte, así que todas las
   actualizaciones llegarían después de todas las creaciones, y un batch recibido el 23-06 no puede traer
   un reclamo del 25-06.
@@ -79,7 +79,7 @@ actualización se modeló con lo que el archivo ya traía.
 ## Consecuencias
 
 - Es un **T1**: cambia qué decide el inbound. Un documento puede ser candidato primero y quedar bloqueado
-  después; el pool lo muestra bloqueado cuando llega la NC. Regla 73, caso 170, `regla_73.test.mjs` y
+  después; el pool lo muestra bloqueado cuando llega la NC. Regla 74, caso 170, `regla_74.test.mjs` y
   `dtesync.test.mjs` (el bloque commiteado valida como log; `plegar`, `expandir`, `migrar` y `validarLog`
   sobre logs plantados).
 - El archivo pasa de 35 a 46 MB; el stream tiene 55.549 eventos; «facturas recibidas» cuenta documentos,

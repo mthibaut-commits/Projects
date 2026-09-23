@@ -196,7 +196,7 @@ Se presenta partido en dos pestañas y con dos vistas:
 | En otra operación | estado del **pipeline**, no del SII: entra por parámetro |
 
 La cesión se nombra con el factoring y la fecha, y distingue la **cesión propia** («Cedida a Security»: no bloquea, es cartera propia y entra a la
-oferta con su monto — ADR-0014, regla 63) de la ajena, que sí bloquea. Una **cesión parcial** —el A2 declara un monto menor que el documento— bloquea igual, pero
+oferta con su monto — ADR-0014, regla 64) de la ajena, que sí bloquea. Una **cesión parcial** —el A2 declara un monto menor que el documento— bloquea igual, pero
 el mensaje dice por cuánto: el crédito quedó con dos dueños y el ejecutivo necesita saber si vale la
 pena pedirle al cliente que lo resuelva.
 
@@ -924,7 +924,7 @@ haberla visto. Re-evaluar para borrar un «no» firmado sería deshacer evidenci
 
 ### 14. El deudor no confirma
 
-Se bifurca en la mesa de verificación. **Desde el 23-09-2026 (ADR-0018, regla 70) la factura NO sale de la
+Se bifurca en la mesa de verificación. **Desde el 23-09-2026 (ADR-0018, regla 71) la factura NO sale de la
 oferta:** queda **marcada «no verificada» y vetada**, la operación muestra el issue «facturas no verificadas: no se
 puede cursar» (VER-01 sigue mandando) y el ejecutivo comercial recibe el aviso por mensajería. Es él quien abre la
 operación —«Editar la oferta» la reabre y revoca la firma (§15)—, retira las facturas del deudor, vuelve a simular y
@@ -941,7 +941,7 @@ siendo del **deudor** y el veto es por **factura**. Es el único punto del pipel
 hermanas dejan de coincidir, y por eso el badge del tab es por factura mientras la cabecera agrupa y
 dice «n de m por verificar».
 
-**El recorte sin re-asignar quedó para el rechazo del comité** (regla 68): ahí el retiro no re-asigna contra el
+**El recorte sin re-asignar quedó para el rechazo del comité** (regla 69): ahí el retiro no re-asigna contra el
 estado del día, **recorta** la asignación anterior y las demás facturas conservan su línea y su origen. Por la
 verificación ya no hay retiro automático, así que tampoco recorte: la versión nueva sale de la simulación del
 ejecutivo sobre el paquete nuevo.
@@ -1067,7 +1067,7 @@ apoderado, que es evidencia regulatoria.
 
 **No hay reevaluación diaria de la cartera.** La asignación es una **consulta pura**: si el comité
 amplió una línea o si otro negocio se llevó el cupo, la respuesta de hoy ya es la de hoy sin que nadie
-recalcule nada. Lo único que corre al cierre del día es el **corte** (ADR-0019, regla 67): a la hora del tenant, la
+recalcule nada. Lo único que corre al cierre del día es el **corte** (ADR-0019, regla 68): a la hora del tenant, la
 oportunidad del inbound **sin oferta** se elimina —queda en la bitácora del sistema— y al reinicio el inbound la
 **re-origina** como oportunidad **nueva**, con su propio identificador y una `referencia` a la eliminada, sin
 simular y con la oferta vacía — una cifra vieja se lee como cifra. La que tiene oferta no se toca, cualquiera sea
@@ -1312,7 +1312,7 @@ describen conducta:
 | **Tres entradas del pricing** (mora, otros descuentos, cuentas por cobrar) se generan por hash y entran al Subtotal | contradice «el pipeline no genera datos»; el prorrateo las reparte documento a documento |
 | El **«Monto a Girar» del catálogo del tenant no sale de la pantalla del detalle**: lo que viaja al resto del sistema es la simulación gruesa del tubo | la operación se cursa por una cifra distinta de la que el ejecutivo aprobó en pantalla |
 | El camino vivo de «Otorgamiento» a giro **salta a Girada** sin pasar por Pendiente Integración, sin VER-01 y sin la aprobación de Operaciones N3 | es el atajo que §7 describe como cerrado, vivo por otra ruta |
-| ~~**`simularOferta` no emite versión**~~ → **cerrado el 23-09-2026** (ADR-0013, regla 71): simular dispara el evento de evaluación y emite la v1 con las cinco secciones; el recorte por verificación ya no emite (ADR-0018) y el comité emite la suya (ADR-0015) | toda operación simulada tiene versión de la cual leer (caso 168) |
+| ~~**`simularOferta` no emite versión**~~ → **cerrado el 23-09-2026** (ADR-0013, regla 72): simular dispara el evento de evaluación y emite la v1 con las cinco secciones; el recorte por verificación ya no emite (ADR-0018) y el comité emite la suya (ADR-0015) | toda operación simulada tiene versión de la cual leer (caso 168) |
 | El **inbound no excluye las facturas ya cedidas** a otro factor | entran al monto con que se dimensiona la oportunidad, así que el tubo ofrece una oportunidad más grande de la que existe |
 | El **histórico de factoring del par** —lo que separa CAT1 de CAT4 en el inbound— no lo entrega ningún activo: se genera determinista por par | la clasificación que decide si una factura abre oportunidad se apoya en un dato que no viene de ninguna entrega |
 | El **piso de riesgo del deudor** del pricing es una constante del fuente por razón social, y ningún layout lo declara | 675 de 697 deudores del archivo reciben el default; el activo que debería traerlo es el del modelo de riesgo |

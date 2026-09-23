@@ -37,7 +37,7 @@ timestamp: 2026-09-17T15:29:14Z
     - **Los DOS invariantes del activo, comprobados en el generador antes de escribir** (14-09-2026, a pedido del usuario: «la fecha de cesión no puede ser anterior a la fecha de emisión y el monto de cesión debiera ser igual o menor que el de la factura»). **(1)** No se cede una factura que no se emitió. **(2)** El monto cedido es **igual o menor** que el del documento: la **cesión parcial** existe —se cede una parte del crédito y el resto sigue siendo del cliente— pero ceder MÁS sería transferir un crédito que no existe. Se validan en `cesiones.js` y una cesión que los rompa **no sale del generador**: es el único punto donde todavía se pueden arreglar, porque un consumidor que reciba `MontoCesion > MontoDocumento` no tiene con qué. **Y la cota «o menor» hay que EJERCITARLA**: la entrega anterior tenía las 1.300 cesiones por el total exacto, así que el invariante se cumplía sin que nada lo probara — ahora **160 son parciales** (12%, entre el 30% y el 95% del documento). El pipeline las lee: una cesión parcial deja el documento con dos dueños, así que se bloquea igual pero el mensaje dice por cuánto —«Cedida en parte · …a Tanner Servicios Financieros el 2026-06-22 **por M$147,3 de M$171,6** (cesión parcial)»—, que es lo que el ejecutivo necesita para decidir si vale la pena pedirle al cliente que la resuelva. Y lo que se llevó el otro factoring es el monto **cedido**, no el del documento: sumar el total inflaría la pérdida.
     - **Y lo que el A11 DERIVA de las cesiones estaba mal derivado** (lo destapó la pregunta del usuario, «Plataforma 360 ¿por qué trae cesiones?»). No trae cesiones: trae tres campos que se MIDEN sobre ellas —colocación promedio 12m e historia como cliente—, que su spec declara y que son atributos de la EMPRESA. Pero el fold guardaba el **máximo** de las fechas de cesión y lo escribía en `FECHA_PRIMERA_OPERACION`: una empresa que nos cede hace dos años figuraba como cliente estrenado el mes pasado, al revés de para lo que ese campo sirve al decidir. Y `FECHA_INGRESO` se generaba por hash sin mirarla, así que podía quedar **después** de la primera operación — un cliente que operó antes de existir. Corregido: el fold guarda las dos puntas, «primera» toma el mínimo y el ingreso se acota. Medido sobre los 233 clientes con colocación: 233 correctas, 0 ingresos posteriores. **Antes de reconciliar las cesiones esto no se podía ni comprobar.** Lo que sí sigue generándose por perfil es el pricing histórico (`TASA_ULT_OP_PCT`, `SPREAD_REAL_12M_PCT`, `COMISION_ULT_OP_M`): una cesión traspasa el crédito, no el precio al que se compró, así que no está en ningún activo — la cesión sólo decide si el campo aplica.
     - Verificado en pantalla: los tooltips dicen «AECSync registra la cesión de este folio a **Eurocapital** el 2026-06-23» y «a **Tanner Servicios Financieros** el 2026-06-22», con las cesiones que el activo declara. Caso **95**, que cubre también lo que el A11 deriva.
-    - **(23-09-2026, ADR-0014, regla 63)** La cedida a Security dejó de bloquearse al incorporar: es candidata como cualquier otra y se rotula «Cedida a Security» (el caso 95 ahora fija que ENTRA). La cedida a un factoring ajeno sigue bloqueada al incorporar y, además, ya no es candidata del inbound: caso **159**. La oferta tampoco la excluye ya (`motivoExcl` sólo mira la cesión ajena; gate `regla_63.test.mjs`).
+    - **(23-09-2026, ADR-0014, regla 64)** La cedida a Security dejó de bloquearse al incorporar: es candidata como cualquier otra y se rotula «Cedida a Security» (el caso 95 ahora fija que ENTRA). La cedida a un factoring ajeno sigue bloqueada al incorporar y, además, ya no es candidata del inbound: caso **159**. La oferta tampoco la excluye ya (`motivoExcl` sólo mira la cesión ajena; gate `regla_64.test.mjs`).
 
 13-nonies. **La columna SOW del tubo: el MIX DE FINANCIAMIENTO lo MIDE el A2 y lo PUBLICA el A11** (15-09-2026, pedido del usuario). La fila de la tabla se lee de corrido: cuánto hay que comprarle (Oportunidad), **con quién se compite por eso** (SOW) y qué produce simularlo (Simulación).
     - **El DATO son cuatro porciones que suman 100** —«Otros factoring», «★ Security», «Factoring target», «Otros bancarios»— con el desglose por cesionario (razón social y %). **Lo que la columna DIBUJA son los cesionarios**, no las porciones (15-09-2026, pedido del usuario): la pregunta es con quién se compite y para eso «Otros bancarios · 22%» no sirve para llamar a nadie, «Banco Santander · 14%» sí. Ver 13-quindecies.
@@ -183,7 +183,7 @@ timestamp: 2026-09-17T15:29:14Z
       de `PC_CLIENTES`, y el catálogo sale de `P360`— más la línea base de `auditar_muerto`, que es la que
       obliga a que no quede ningún resto sin referencias.
 
-72. **EL ACUSE DEL RECEPTOR ES UNA BANDERA DEL DTE QUE EL A1 TRAE Y `facturaDeDTE` LEE; SE MUESTRA Y NO FILTRA** (23-09-2026,
+73. **EL ACUSE DEL RECEPTOR ES UNA BANDERA DEL DTE QUE EL A1 TRAE Y `facturaDeDTE` LEE; SE MUESTRA Y NO FILTRA** (23-09-2026,
     M-01, G-01; el usuario, 22-09-2026: «las aceptaciones son parte de las banderas de DTE»; 23-09-2026: «las facturas los
       primeros 8 días desde su emisión no tienen acuse de aceptación y/o reclamo y en ese estado de ausencia de acuse sí
       son candidatas»). El spec del curse y el informe de gaps decían que «el A1 no la trae»: **la trae**. `EstadoDTE`
@@ -200,8 +200,8 @@ timestamp: 2026-09-17T15:29:14Z
       `acuseLabel` es la única lectura de pantalla. Sin dato del A1 (XML a mano, fixtures) el chip no dibuja nada:
       «Sin acuse» es lo que el activo dice, no lo que se afirma de un documento que llegó por otro camino.
     - **No filtra**: «Buena factura» (`CRITERIO_PRED`), `estadoCandidata` y el perfil de la Bandeja no leen `acuse`.
-      Lo que excluye sigue siendo el reclamo, la nota de crédito, la cesión a un factoring ajeno (regla 63), la venta al
-      contado y la antigüedad (regla 64). Una factura sin acuse en sus primeros 8 días es candidata, y con acuse también.
+      Lo que excluye sigue siendo el reclamo, la nota de crédito, la cesión a un factoring ajeno (regla 64), la venta al
+      contado y la antigüedad (regla 65). Una factura sin acuse en sus primeros 8 días es candidata, y con acuse también.
     - **El Excel de candidatas dejó de inventarlo**: la columna «Aceptada/Reclamada» salía de un sorteo por RUT
       (`facturasDeCandidata`), y un candidato —proveedor de un cliente, no cliente— no tiene documentos en el A1. Se
       retiró la columna con el sorteo; el resto de ese detalle sigue siendo la derivación determinista del agregado que
@@ -211,13 +211,13 @@ timestamp: 2026-09-17T15:29:14Z
       `spec-inbound-facturas.md` §2.
     - Caso **169** (los tres estados leídos con su fecha y el A1 entero contado por `facturaDeDTE` igual que por
       `EstadoDTE`; el stream y el libro; «Buena factura» y `estadoCandidata` sin mirar el acuse, en las dos direcciones;
-      el rótulo con sus tres textos y mudo sin dato; el Excel sin `estado`) y `regla_72.test.mjs` (la lectura sin
+      el rótulo con sus tres textos y mudo sin dato; el Excel sin `estado`) y `regla_73.test.mjs` (la lectura sin
       derivar, «Sin acuse» en un solo sitio y nunca como sorteo, el chip en las tres filas y mudo sin dato, el libro, y
-      ningún filtro leyendo `acuse`; diez sondas). La fila en pantalla la fija `e2e-72-a` (CP-010): en la oferta y en
+      ningún filtro leyendo `acuse`; diez sondas). La fila en pantalla la fija `e2e-73-a` (CP-010): en la oferta y en
       los disponibles el chip de cada factura coincide con lo que el A1 trae para ese folio, y la reclamada sigue
       bloqueada en su fila.
 
-73. **EL A1 ES UN FLUJO DE EVENTOS POR DOCUMENTO: UNA FILA POR NOTIFICACIÓN, Y EL DOCUMENTO SE PLIEGA EN UN SOLO SITIO**
+74. **EL A1 ES UN FLUJO DE EVENTOS POR DOCUMENTO: UNA FILA POR NOTIFICACIÓN, Y EL DOCUMENTO SE PLIEGA EN UN SOLO SITIO**
     (23-09-2026, ADR-0020; el usuario: «Considera que los eventos de dtesync llegan varias veces para la misma factura una
       vez se crea (notifica nueva factura), después puede llegar nota de crédito, después aceptación. Considera eso para
       modelar el archivo de dtesync»). Hasta ese día el A1 traía una fila por DTE con su estado FINAL y el stream lo
@@ -251,8 +251,8 @@ timestamp: 2026-09-17T15:29:14Z
       (`secuenciaDTE`): una re-entrega no se aplica dos veces. La NC y el reclamo dejan traza en la bitácora («El SII
       notificó una nota de crédito sobre el documento #N: queda bloqueado en…»); el acuse se anota sin traza. **Sobre la
       oferta cerrada o publicada, o después de la firma, la NC, el reclamo o la cesión a otro INHABILITAN el documento y
-      dejan la operación no cursable (ADR-0021, regla 74)**: el documento queda con su estado nuevo y marcado
-      `inhabilitada`, el veto de la regla 70 lo cubre y el ejecutivo retira, re-evalúa y vuelve a publicar para una nueva
+      dejan la operación no cursable (ADR-0021, regla 75)**: el documento queda con su estado nuevo y marcado
+      `inhabilitada`, el veto de la regla 71 lo cubre y el ejecutivo retira, re-evalúa y vuelve a publicar para una nueva
       firma. (Hasta ADR-0021, el mismo día, sólo se avisaba: era la decisión que ADR-0020 dejó abierta.) La corrida
       siguiente reporta en su línea de bitácora del sistema cuántas actualizaciones aplicó y cuántos documentos inhabilitó.
     - **La migración fue una sola vez** (`GeneradorDatos/migrar_dtesync_eventos.js`, como `migrar_padron.js`): cada documento
@@ -263,8 +263,8 @@ timestamp: 2026-09-17T15:29:14Z
       archivo pasó de 35 a 46 MB.
     - Caso **170** (el pliegue en los dos órdenes y la fila plana; el A1 real contado por documentos en el libro, los pares y
       el corte; el stream con la creación sin banderas y la actualización aparte; la NC en los disponibles y en la oferta
-      abierta con traza, la inhabilitación sobre la oferta cerrada (regla 74), la re-entrega, el acuse sin traza, el folio
-      ajeno, el lote y el evento del inbound), `regla_73.test.mjs` (ningún lector del log fuera del pliegue y el stream; los lectores plegados;
+      abierta con traza, la inhabilitación sobre la oferta cerrada (regla 75), la re-entrega, el acuse sin traza, el folio
+      ajeno, el lote y el evento del inbound), `regla_74.test.mjs` (ningún lector del log fuera del pliegue y el stream; los lectores plegados;
       el pliegue del fuente ejecutado en Node contra el del generador; el stream y el tick separando; el aviso sobre la
       oferta cerrada; el contrato; doce sondas) y `dtesync.test.mjs` (el bloque commiteado valida como log —creación
       primero, secuencias contiguas, fechas en ventana, orden de llegada, actualizaciones sin el documento— y `plegar`,
