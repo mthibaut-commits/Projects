@@ -345,15 +345,17 @@ Sin esa explicación, una oferta idéntica que ayer se cursaba y hoy no se lee c
 
 #### La versión es el mecanismo
 
-El otorgamiento ya versiona cada simulación: un registro **inmutable y append-only** con lo que devolvió el origen en ese momento, y la pantalla diffea la versión N contra la N−1. **Ese mismo concepto cubre las otras dos decisiones que dependen de datos externos que se mueven solos**, así que cada versión de simulación fija las tres:
+El otorgamiento ya versiona cada simulación: un registro **inmutable y append-only** con lo que devolvió el origen en ese momento, y la pantalla diffea la versión N contra la N−1. **Ese mismo concepto cubre las otras dos decisiones que dependen de datos externos que se mueven solos**, así que cada versión de simulación fija las tres —y, desde la regla 68 (23-09-2026), también el giro y el pricing—:
 
 | Bloque de la versión | Qué congela | Por qué se mueve entre versiones |
 |---|---|---|
 | **Otorgamiento** | Variables del origen y disposición de cada regla | El JSON de la API se regulariza tras la firma |
 | **Asignación de líneas** | Con qué línea y qué monto se financió cada factura, y qué quedó para comité | El comité amplía cupos; otros negocios los consumen |
 | **Verificación de facturas** | Veredicto por deudor y qué criterio lo gatilló | El batch diario refresca el estado del par cliente-deudor |
+| **Giro** (regla 68) | GE / GN por deudor sobre la asignación de la misma versión y el monto por documento | La asignación y la verificación de la versión son sus entradas |
+| **Pricing** (regla 68) | El modo de tasa con que se simuló, la tasa ponderada, la del último negocio, la efectiva, el descuento, la comisión, el anticipo, los gastos y el plazo equivalente | La política del tenant y el último negocio del cliente se mueven; la huella O05 no (regla 23) |
 
-Cada simulación emite una versión nueva; ninguna versión emitida se edita. El diff que ve el ejecutivo es siempre **versión actual contra versión anterior**, y es descriptivo: nunca una entrada del cálculo.
+Cada simulación emite una versión nueva —la emite el evento de evaluación (`evaluarOperacion`, regla 68, ADR-0013): simular, «Re-evaluar operación» y «Re-evaluación de la simulación» son el mismo gesto, y una evaluación que no completa los cinco motores no es una versión—; ninguna versión emitida se edita. El diff que ve el ejecutivo es siempre **versión actual contra versión anterior**, y es descriptivo: nunca una entrada del cálculo.
 
 #### Después de aceptar, la operación sólo ENCOGE
 

@@ -8205,6 +8205,118 @@
     }
   }
 
+  {
+    // 168 · UN EVENTO DE EVALUACIÓN, CINCO MOTORES, CINCO VERSIONES CON EL MISMO NÚMERO (regla 68, ADR-0013; M-13, M-24,
+    //       M-26, M-36; G-09, G-10, G-22, G-32). «Al presionar simular se debe generar un evento que gatille todas las
+    //       evaluaciones de los motores […] Cada motor debiera tener una versión como el motor de otorgamiento y siempre
+    //       debieran haber la misma cantidad de ejecuciones en todos los motores» (el usuario, 22-09-2026). Lo que fija:
+    //       (a) el primer evento emite la v1 —`v: 1`, `rev: 0`, contemporánea, no retroactiva— con las CINCO secciones
+    //           (otorgamiento, verificación, línea, giro, pricing) sobre las mismas facturas, y la auditoría lo registra;
+    //       (b) tres eventos → 3 · 3 · 3 · 3 · 3 (`contarVersiones`) y la vigente es la tercera (`revOtorgActual` = 2);
+    //       (c) DIRECCIÓN QUE BLOQUEA: un motor que revienta no deja versión a medias —ni push, ni cambio de la vigente— y
+    //           la bitácora del sistema y la auditoría registran «Evaluación fallida» con el motor que falló;
+    //       (d) la versión de pricing guarda el modo de tasa y las condiciones (M-36): con `tasaModo` «riesgo» y «ultima»
+    //           el modo cambia y la huella O05 no (regla 23, caso 85);
+    //       (e) la versión del rechazo del comité es completa: cinco secciones sobre lo que queda y la línea recortada
+    //           (regla 65), sin push (la decisión es pura);
+    //       (f) «Re-evaluación de la simulación» pasa por el evento: una versión más, con el origen regularizado.
+    //       Que «Simular la oferta» y «Re-evaluar operación» disparen el evento, que la pestaña lo reciba y que el anuncio
+    //       del recálculo se haya retirado lo fija el gate de texto `regla_68.test.mjs` (son closures de React).
+    const ID = "T-168";
+    const habia = repoSimVersions.get(ID);
+    const auditSnap = AUDIT_LOG.slice(); const auditDesc = AUDIT_DESCARTADOS;
+    const rateSnap = Object.fromEntries(Object.keys(RATE_BUCKETS).map((k) => [k, RATE_BUCKETS[k].slice()]));
+    const idemSnap = new Map(IDEM_APLICADAS);
+    const sysSnap = SYS_LOG.slice();
+    const modo0 = CFG_ACTIVA.tasaModo;
+    const motorLinea = asignarLineas;
+    if (habia !== undefined) repoSimVersions.del(ID);
+    Object.keys(RATE_BUCKETS).forEach((k) => { delete RATE_BUCKETS[k]; });
+    const f1 = fac("e1", LB[0], 20), f2 = fac("e2", LB[1], 12);
+    const monto = 32 * MMF;
+    const base = { id: ID, rutEmisor: EMISOR_LIBRO, cliente: "Cliente 168", negocioNum: "N-168", stage: "oferta", simulado: true,
+                   monto, facturas: 2, facturasOp: [f1, f2], giro: Math.round(monto * 0.9), tasaDescuento: 2.1, comision: 450000 };
+    const ids = (xs) => (xs || []).map((f) => f.id).sort().join(",");
+    const vs = () => SIM_VERSIONS[ID] || [];
+    const cuenta = () => contarVersiones(vs());
+    const parejo = (n) => Object.values(cuenta()).every((x) => x === n) && Object.keys(cuenta()).length === 5;
+    let v1Ok = false, tresOk = false, fallaOk = false, modoOk = false, comiteOk = false, origenOk = false, restauradoOk = false, det = "";
+    try {
+      // (a) El primer evento: la v1 con las cinco secciones, contemporánea y auditada.
+      const r1 = evaluarOperacion(base, "CR", { origen: "Simulación de la oferta", motivo: "simulacion" });
+      const v1 = r1 && r1.version;
+      const audit1 = AUDIT_LOG.find((a) => a.empresaId === ID && a.modulo === "Evaluación de la operación" && a.accion === "Simulación de la oferta");
+      v1Ok = !!r1 && r1.ok === true && !!v1 && v1.v === 1 && v1.rev === 0 && vs().length === 1 && vs()[0] === v1 && versionCompleta(v1)
+        && MOTORES_VERSION.every((k) => v1[k] != null) && v1.motoresFallidos.length === 0 && v1.origen === "Simulación de la oferta" && v1.motivo === "simulacion"
+        && Array.isArray(v1.res) && v1.res.length > 0 && ["aprobada", "sujeta", "rechazada"].includes(v1.estado)
+        && ids(v1.linea.facturas) === "e1,e2" && ids(v1.verificacion.facturas) === "e1,e2" && v1.verificacion.total === 2
+        && v1.giro.filas.length === 2 && v1.giro.cuadra === true && v1.giro.porTipo.GE.monto + v1.giro.porTipo.GN.monto === base.giro
+        && typeof v1.pricing.tasaRiesgo === "number" && typeof v1.pricing.tasaSimulada === "number" && v1.pricing.montoGirar === base.giro
+        && v1.pricing.tasaDescuento === 2.1 && v1.pricing.comision === 450000 && v1.pricing.anticipoPct === CFG_ACTIVA.anticipoDefault
+        && v1.pricing.modo === (modo0 || "mayor") && v1.ts instanceof Date && Math.abs(Date.now() - v1.ts.getTime()) < 10000
+        && !!audit1 && audit1.exito === true && /v1/.test(audit1.glosa) && evaluarOperacion(null, "CR").ok === false;
+      // (b) Tres eventos: 3 · 3 · 3 · 3 · 3, y la vigente es la tercera.
+      const r2 = evaluarOperacion(base, "CR", { origen: "Re-evaluación de la operación", motivo: "reevaluacion" });
+      const r3 = evaluarOperacion(base, "CR", { origen: "Re-evaluación de la operación", motivo: "reevaluacion" });
+      tresOk = r2.ok && r3.ok && r3.version.v === 3 && r3.version.rev === 2 && vs().length === 3 && parejo(3) && revOtorgActual(base) === 2
+        && vs()[2] === r3.version && r3.version.motivo === "reevaluacion";
+      const cuenta3 = JSON.stringify(cuenta()).replace(/"/g, "");
+      // (c) Un motor que revienta: sin versión a medias, la vigente sigue, y queda escrito con el motor.
+      let r4 = null;
+      const sysAntes = SYS_LOG.length;
+      asignarLineas = () => { throw new Error("A23 no responde"); };
+      try { r4 = evaluarOperacion(base, "CR", { origen: "Re-evaluación de la operación", motivo: "reevaluacion" }); }
+      finally { asignarLineas = motorLinea; }
+      const sysFalla = SYS_LOG[0];
+      const auditFalla = AUDIT_LOG.find((a) => a.empresaId === ID && a.accion === "Evaluación fallida");
+      fallaOk = !!r4 && r4.ok === false && r4.motivo === "motor_fallido" && r4.version === null && r4.fallidos.length === 1 && /línea: A23 no responde/.test(r4.fallidos[0])
+        && vs().length === 3 && parejo(3) && revOtorgActual(base) === 2 && vs()[2] === r3.version
+        && SYS_LOG.length === sysAntes + 1 && !!sysFalla && sysFalla.nivel === "error" && sysFalla.fuente === "evaluacion" && /Evaluación fallida · T-168: línea: A23 no responde/.test(sysFalla.mensaje)
+        && sysFalla.datos && sysFalla.datos.operacion === ID && !!auditFalla && auditFalla.exito === false && /A23 no responde/.test(auditFalla.glosa);
+      // (d) El modo de tasa y las condiciones viajan en la versión; la huella no se mueve por el precio.
+      const huella0 = huellaOperacion(base);
+      CFG_ACTIVA.tasaModo = "riesgo";
+      const vR = evaluarOperacion(base, "CR", { origen: "Re-evaluación de la operación", motivo: "reevaluacion" }).version;
+      CFG_ACTIVA.tasaModo = "ultima";
+      const vU = evaluarOperacion(base, "CR", { origen: "Re-evaluación de la operación", motivo: "reevaluacion" }).version;
+      CFG_ACTIVA.tasaModo = modo0;
+      modoOk = !!vR && !!vU && vR.pricing.modo === "riesgo" && vU.pricing.modo === "ultima" && vR.pricing.usaUltNeg === false && vR.pricing.tasaSimulada === vR.pricing.tasaRiesgo
+        && (vU.pricing.tasaUltNeg == null ? vU.pricing.usaUltNeg === false && vU.pricing.tasaSimulada === vU.pricing.tasaRiesgo : vU.pricing.usaUltNeg === true && vU.pricing.tasaSimulada === vU.pricing.tasaUltNeg)
+        && vR.pricing.comisionPct === CFG_ACTIVA.comisionPct && vR.pricing.gastosCLP === CFG_ACTIVA.gastosCLP && typeof vR.pricing.plazoEquivalente === "number"
+        && huellaOperacion(base) === huella0 && vs().length === 5 && parejo(5);
+      // (e) La versión del comité es completa y recortada, y la decisión no la empuja.
+      const dealCom = { ...base, stage: "otorgamiento", clienteAcepto: true, deudor: nomDe(LB[1]),
+                        deudores: [{ name: nomDe(LB[1]), facturas: 1, monto: 12 * MMF }, { name: nomDe(LB[0]), facturas: 1, monto: 20 * MMF }] };
+      const sol = { idProceso: "PRC-T168", rut: base.rutEmisor, cliente: base.cliente, estado: "Rechazada", origen: { dealId: ID },
+                    detalle: [{ deudor: nomDe(LB[1]), rutDeudor: LB[1], monto: 12 * MMF, tipoLinea: "puntual", estado: "Rechazada" }] };
+      const dec = rechazoComiteDecision(dealCom, sol, vs());
+      const vc = dec && dec.version;
+      comiteOk = !!dec && dec.aplica === true && !!vc && versionCompleta(vc) && vc.v === 6 && vc.motivo === "comite_rechazo" && ids(dec.quedan) === "e1"
+        && ids(vc.linea.facturas) === "e1" && ids(vc.verificacion.facturas) === "e1" && vc.verificacion.total === 1 && vc.giro.filas.length === 1
+        && vc.giro.cuadra === true && vc.pricing.modo === (modo0 || "mayor") && vs().length === 5;
+      // (f) «Re-evaluación de la simulación» es el mismo evento, con el origen regularizado.
+      const nvF = reevaluarCliente(base, "CR");
+      origenOk = !!nvF && nvF.v === 6 && nvF.motivo === "reevaluacion_origen" && /JSON API actualizado/.test(nvF.origen) && nvF.vars.pagareFirmado === true
+        && vs().length === 6 && parejo(6) && vs()[5] === nvF && versionCompleta(nvF);
+      det = `v1 ${v1 ? "v" + v1.v + "/rev" + v1.rev : "—"} con ${v1 ? MOTORES_VERSION.filter((k) => v1[k] != null).length : 0} secciones ${v1Ok}`
+        + ` · tres eventos ${cuenta3} ${tresOk} · motor caído: sin versión, «${sysFalla ? sysFalla.mensaje.slice(0, 60) : "—"}» ${fallaOk}`
+        + ` · modo ${vR ? vR.pricing.modo : "?"}/${vU ? vU.pricing.modo : "?"}, huella fija ${modoOk} · comité v${vc ? vc.v : "?"} completa y recortada ${comiteOk} · re-evaluación de la simulación ${origenOk}`;
+    } finally {
+      asignarLineas = motorLinea;
+      CFG_ACTIVA.tasaModo = modo0;
+      repoSimVersions.del(ID);
+      if (habia !== undefined) repoSimVersions.set(ID, habia);
+      AUDIT_LOG.length = 0; AUDIT_LOG.push(...auditSnap); AUDIT_DESCARTADOS = auditDesc;
+      Object.keys(RATE_BUCKETS).forEach((k) => { delete RATE_BUCKETS[k]; }); Object.keys(rateSnap).forEach((k) => { RATE_BUCKETS[k] = rateSnap[k]; });
+      IDEM_APLICADAS.clear(); idemSnap.forEach((v, k) => IDEM_APLICADAS.set(k, v));
+      SYS_LOG.length = 0; SYS_LOG.push(...sysSnap);
+      restauradoOk = asignarLineas === motorLinea && CFG_ACTIVA.tasaModo === modo0 && (SIM_VERSIONS[ID] === undefined || SIM_VERSIONS[ID] === habia) && SYS_LOG.length === sysSnap.length;
+    }
+    ok("168 un evento de evaluación corre los cinco motores y emite una versión con cinco secciones o ninguna: la v1 al simular, N eventos → N versiones en los cinco, el motor caído no deja versión a medias, el pricing guarda el modo de tasa, el comité y la re-evaluación de la simulación pasan por el mismo evento",
+       v1Ok && tresOk && fallaOk && modoOk && comiteOk && origenOk && restauradoOk,
+       det + ` · restaurado ${restauradoOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

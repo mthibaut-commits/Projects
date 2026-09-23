@@ -10,7 +10,7 @@ timestamp: 2026-09-17T22:12:32Z
 
 > Reglas de dominio de NEX, **verbatim** desde el `CLAUDE.md` anterior al 17-09-2026, agrupadas por tema. Se citan por su número (`regla 7`) y **no se renumeran**: el fuente y otros documentos las referencian así. Índice de todas, con qué caso de la suite verifica cada una: [`invariantes.md`](../invariantes.md).
 >
-> Reglas en este archivo: **7** · **12** · **13** · **15** · **15-bis** · **15-bis-bis** · **15-bis-ter** · **15-quater** · **15-quinquies** · **15-ter** · **15-quater-bis** · **27** · **44** · **45** · **46**.
+> Reglas en este archivo: **7** · **12** · **13** · **15** · **15-bis** · **15-bis-bis** · **15-bis-ter** · **15-quater** · **15-quinquies** · **15-ter** · **15-quater-bis** · **27** · **44** · **45** · **46** · **65** · **68**.
 
 7. **Motor de asignación de líneas** (`asignarLineas`, `Specs_Procesos/Lineas/spec-asignacion-lineas.md`). Función **pura** de (selección de facturas, estado de líneas) → (asignaciones, faltantes); no muta lo memoizado. Cinco líneas, con el nombre del negocio (`LINEA_LBL`): **LF1** Línea Inicial Cliente (`LF1_MM = 30` al enrolar) · **LF2** Normal Cliente-Deudor · **LF3** Puntual Cliente-Deudor · **LF4** Cliente-Otros Deudores (**es del CLIENTE**, financia a los deudores sin línea propia con él) + la **línea global del deudor**, compartida por todos los clientes que le ceden. Regla: una factura se cursa sólo si cabe en **los tres niveles a la vez** — `monto ≤ min(disponible_cliente, disponible_par, disponible_deudor)`. El **recálculo es SIEMPRE COMPLETO** (se recorre por nota descendente y los recursos son compartidos; recalcular sólo el deudor tocado diverge y termina cursando contra cupo inexistente). `RESOLUCION_COMITE` mapea el motivo del rechazo a qué se le pide al comité y a quién afecta: ampliar la línea del deudor NO se resuelve con una puntual del cliente.
 
@@ -32,6 +32,7 @@ timestamp: 2026-09-17T22:12:32Z
     - **El cupo liberado no vuelve solo:** sigue reservado por el monto original hasta que lo liberen en el sistema de gestión de líneas. Por eso los disponibles del snapshot no suben al recortar, y la app **muestra** el monto y dónde pedirlo, pero nunca lo toca.
     - Cerrada la puerta trasera del Kanban: ya no se puede **arrastrar hacia atrás** una operación en Aceptada/Cesión/Giro. El selector del detalle sólo ofrecía «Avanzar a», pero `moveTo` no miraba la etapa de origen y dejaba devolver a Oferta una operación firmada con cupo reservado.
     - **El conteo de facturas del deudor dice de qué es** (13-09-2026). «9 fact. · 4 no disponibles» se leía como «9 en total, 4 de ellas no disponibles» —o sea 5— cuando la cifra ya era la **incorporable** y las otras 4 iban aparte; el usuario lo leyó así y pidió el cambio con el número mal. Ahora dice **«9 fact. disponibles»**, que no admite la otra lectura. Las bloqueadas no se pierden: están en la lista de abajo, cada una con su motivo, y el conteo va en el tooltip. La cabecera «Deudores disponibles» arrastraba la misma ambigüedad con la misma cifra y se corrigió igual.
+    - **PRECISIÓN del 23-09-2026 (ADR-0013, regla 68):** «cada simulación emite una versión» dejó de ser un desfase: la emite el EVENTO de evaluación (`evaluarOperacion`) al simular, y la versión trae cinco secciones —otorgamiento, verificación, línea, giro y pricing—, o no se emite.
 
 15. **Solicitud de línea:** NEX solo INYECTA (API 1) y consulta (API 2/3; *el callback push que promete el swagger no existe en el prototipo —sólo pull con «Consultar estados»—, anotado el 17-09-2026 por el caso 124*); resuelve el sistema externo. Una solicitud por línea. La bandeja de las nuevas se llama **«Solicitudes»** y no «En proceso»: «en proceso» describe un estado del sistema externo, no lo que la bandeja contiene, que son las solicitudes que el ejecutivo mandó.
     - **AMPLIACIÓN del 23-09-2026 (ADR-0015, regla 65):** la API 3 devuelve también **«Rechazada»**, por línea de detalle, y NEX la aplica al consultarla: retira las facturas del deudor, deja versión y reabre (o pierde en cero). La bandeja la pinta en rojo con la observación del comité.
@@ -144,3 +145,49 @@ timestamp: 2026-09-17T22:12:32Z
       causa, «Observada»/«Aprobada»/girada sin efecto, y la API 3 resolviendo «Rechazada» por línea) y
       `regla_65.test.mjs` (la API 3, la decisión, el manejador, el disparo desde «Consultar estados» y la bandeja, con
       sonda cada uno). La pantalla del rechazo sigue por e2e (CP-126, CP-127).
+
+68. **UN EVENTO DE EVALUACIÓN CORRE LOS CINCO MOTORES Y EMITE UNA VERSIÓN CON CINCO SECCIONES, O NINGUNA; LA PRIMERA
+    SIMULACIÓN EMITE LA v1** (23-09-2026, ADR-0013, M-13 · M-24 · M-26 · M-36, G-09 · G-10 · G-22 · G-32; el usuario,
+      22-09-2026: «al presionar simular se debe generar un evento que gatille todas las evaluaciones de los motores de
+      manera asíncrona pero paralela. Cada vez que el cliente simula y/o el ejecutivo simula y/o re-evalúa se debe volver
+      a correr los motores. Cada motor debiera tener una versión como el motor de otorgamiento y siempre debieran haber
+      la misma cantidad de ejecuciones en todos los motores»; y el 23-09-2026: «el cliente simula» es una forma de hablar,
+      el evento es un gesto del ejecutivo). Había tres gestos que corrían cosas distintas —la simulación escribía el
+      negocio sin llamar a ningún motor, «Re-evaluar operación» era un spinner de 700 ms y sólo «Re-evaluación de la
+      simulación» emitía versión, con una v1 RETROACTIVA calculada en ese momento— y la verificación, las líneas y el
+      pricing corrían al dibujar el detalle. Ahora hay UN evento, `evaluarOperacion(deal, usuario, opts)`: simular
+      (`simularOferta`, ANTES de escribir el negocio y sobre el negocio tal como va a quedar), «Re-evaluar operación»
+      (`reevaluarOperacion`, desde la cabecera y desde el aviso «La selección cambió») y «Re-evaluación de la simulación»
+      (`reevaluarCliente`, el único que pide el origen actualizado) son el mismo gesto con otro `origen` y `motivo`.
+    - **La versión es la tupla de los cinco motores** (`MOTORES_VERSION`: `res` —otorgamiento—, `verificacion`, `linea`,
+      `giro`, `pricing`), con número, hora, política y build. `snapVersionCli` corre los cinco sobre el mismo paquete; un
+      motor que revienta se anota en `motoresFallidos` y **la versión no se emite** (`versionCompleta`): ni push, ni cambio
+      de la vigente, y la bitácora del sistema y la auditoría registran «Evaluación fallida» con el motor. Sin facturas,
+      las cuatro secciones de abajo valen `null`: es «vacío», no un fallo (caso 124).
+    - **N eventos → N versiones en los cinco motores** (`contarVersiones`), y la primera simulación emite la **v1**
+      contemporánea (`v: 1`, `rev: 0`): no hay v1 retroactiva en el producto (queda sólo para una operación que nunca
+      simuló —fixtures, legado— al re-evaluar la simulación, para que el diff tenga contra qué compararse).
+    - **El giro y el pricing salen de los mismos cálculos que la pantalla**: `giroDeVersion` (GE/GN por deudor sobre la
+      asignación de ESA versión; `giroResumenDeal` lo comparte) y `pricingDeVersion` (M-36: el modo de tasa `tasaModo`
+      —riesgo · ultima · mayor—, la tasa ponderada por riesgo, la del último negocio, la efectiva, el descuento, la
+      comisión, el anticipo, los gastos del tenant, el plazo equivalente y el monto a girar). `tasaDelNegocio` decide la
+      tasa en UN solo sitio para el panel de condiciones del detalle y para la versión: lo que se muestra y lo que se
+      versiona no se separan. La huella O05 sigue fijando el paquete y no el precio (regla 23, caso 85).
+    - **Los únicos emisores de versión son el evento y el comité** (`aplicarRechazoComite`, con la versión que
+      `rechazoComiteDecision` arma con el mismo `snapVersionCli`: cinco secciones sobre lo que queda y la LÍNEA recortada,
+      regla 65). La regularización de las variables re-evaluables —el mock del origen tras la firma— la pide sólo
+      «Re-evaluación de la simulación» (`opts.origenActualizado`), no cualquier versión con número mayor que uno.
+    - **La regla 14 se conserva**: un cambio de selección no dispara nada; el evento es explícito. Y **G-09 se cierra**: las
+      facturas nuevas de la corrida engrosan el pool disponible y la bitácora lo dice con esas palabras («Facturas nuevas
+      para N oportunidad(es) … al pool disponible», «Facturas agregadas al pool»); la marca de recálculo en curso, los
+      esqueletos del tubo y el banner inalcanzable del detalle que anunciaban un recálculo que nunca ocurría se retiraron.
+    - **El tab Otorgamiento cuenta por motor**: el pill dice «N versiones · 5 motores» y su tooltip los cuenta uno a uno;
+      si no cuentan igual (versiones anteriores a la regla), lo dice en ámbar.
+    - Caso **168** (la v1 con las cinco secciones al primer evento, tres eventos → 3 · 3 · 3 · 3 · 3 y la vigente es la
+      tercera, el motor caído sin versión a medias y escrito en la bitácora y la auditoría, el modo de tasa en la versión
+      con la huella fija, la versión del comité completa y recortada, la re-evaluación de la simulación por el mismo
+      evento) y `regla_68.test.mjs` (simular dispara el evento antes de escribir el negocio, «Re-evaluar operación» y la
+      pestaña del detalle, el rechazo de la versión incompleta, ningún emisor fuera del evento y del comité, la
+      regularización sólo por gesto, el giro y el pricing desde los mismos cálculos, el pill por motor y el anuncio del
+      recálculo que no vuelve; dieciséis sondas). La pantalla —el botón, la versión leída al reabrir, «Por evaluar» sin
+      simular, el modo cambiado en Configuración— sigue por e2e (CP-034, CP-035, CP-036, CP-123).

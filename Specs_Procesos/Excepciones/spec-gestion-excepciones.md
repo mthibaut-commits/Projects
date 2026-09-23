@@ -185,10 +185,10 @@ El motor corre sobre la operación en cinco momentos:
 
 | Momento | Quién lo dispara | Qué produce |
 |---|---|---|
-| **La simulación** | el ejecutivo arma la oferta y simula | la **primera evaluación**: la operación pasa a Oferta con su monto y sus facturas, y cada criterio queda con su disposición. Es la versión **v1** |
+| **La simulación** | el ejecutivo arma la oferta y simula | la **primera evaluación**: la operación pasa a Oferta con su monto y sus facturas, y cada criterio queda con su disposición. Es la versión **v1** (el evento de evaluación de la regla 68, ADR-0013: corren los cinco motores y la v1 trae las cinco secciones) |
 | **La pre-evaluación** | el ejecutivo, desde el detalle, con la oferta abierta | adelanta el veredicto y abre la bandeja (§4.5) |
-| **«Re-evaluar operación»** | el ejecutivo, después de agregar o quitar facturas | vuelve a evaluar la operación **tal como quedó** —monto, piso, tramos— con las mismas variables del origen |
-| **«Re-evaluación de la simulación»** | el ejecutivo, desde el tab Otorgamiento, cuando quedan re-evaluables pendientes | pide al origen las variables de hoy y guarda una **versión nueva** (§5.5) |
+| **«Re-evaluar operación»** | el ejecutivo, después de agregar o quitar facturas | vuelve a evaluar la operación **tal como quedó** —monto, piso, tramos— con las mismas variables del origen y emite una **versión nueva**: es el mismo evento que simular (regla 68) |
+| **«Re-evaluación de la simulación»** | el ejecutivo, desde el tab Otorgamiento, cuando quedan re-evaluables pendientes | pide al origen las variables de hoy y guarda una **versión nueva** (§5.5) —el mismo evento, con el origen actualizado— |
 | **El cierre de la oferta y la firma** | la confirmación del cierre en el modal de curse; el cliente al firmar | decide si la oferta puede publicarse; decide a qué etapa va la operación firmada (§5.3) |
 
 Agregar o quitar facturas **no** re-evalúa solo: lo que depende del motor queda en «Por evaluar», sin
@@ -523,10 +523,12 @@ dos gestos distintos con el mismo verbo:
 
 - **«Re-evaluar operación»** (cabecera del detalle). Se usa después de agregar o quitar facturas:
   vuelve a evaluar la operación **tal como quedó** —el monto nuevo mueve el piso por monto y los tramos
-  que dependen de él— con las mismas variables del origen. No crea una versión.
+  que dependen de él— con las mismas variables del origen. **Crea una versión** (regla 68, ADR-0013, desde el
+  23-09-2026): es el mismo evento que simular, con las cinco secciones.
 - **«Re-evaluación de la simulación»** (tab Otorgamiento). Vuelve a pedir al origen las variables del
   cliente y guarda una **versión nueva** (v2, v3…), inmutable, con las variables recibidas y la
-  disposición de cada criterio. El tab muestra cuántas versiones hay, deja elegir cualquiera y marca el
+  disposición de cada criterio. Es el mismo evento de evaluación con el origen actualizado (regla 68). El tab
+  muestra cuántas versiones hay —y que los cinco motores cuentan igual—, deja elegir cualquiera y marca el
   **diff** entre una y la anterior: qué variables cambiaron y qué criterios cambiaron de disposición.
   El botón se habilita sólo mientras queden re-evaluables pendientes —excepciones sin decidir o
   rechazos re-evaluables— y la operación no esté perdida. Es el gesto que corresponde cuando el

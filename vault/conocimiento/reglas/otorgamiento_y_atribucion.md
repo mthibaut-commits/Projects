@@ -154,7 +154,7 @@ timestamp: 2026-09-17T15:29:14Z
       (`decision`, quién, cuándo). Lo que sigue gatillando no se toca; lo ya marcado no se marca dos veces. La función sólo
       escribe la marca —nunca «aprobado» ni «rechazado»: el sistema no decide—, y por eso el gate de OTG-01 exime ese camino
       con esa condición comprobada.
-    - **La mutación** (`marcarExcepcionesQueYaNoAplican`, llamada por `reevaluarCliente` tras emitir la versión y con su
+    - **La mutación** (`marcarExcepcionesQueYaNoAplican`, llamada por `evaluarOperacion` —el evento de evaluación, regla 68— tras emitir la versión y con su
       número) escribe los tres repositorios, cierra la tarea del aprobador con el motivo (la tarea conoce su `stKey` desde
       que se crea), postea en el hilo «Aprobación de excepciones» como el SISTEMA (`CODE_SISTEMA`) y lo termina sólo cuando ya
       no queda ninguna excepción por visar en la operación —el hilo es por operación, no por excepción—, y deja fila en la

@@ -113,8 +113,8 @@ export function pendienteSinNumero(src) {
 /* (4) La versión congela línea y verificación juntas. */
 export function versionUnica(src) {
   const c = sinComentarios(src); const fallos = [];
-  const i = c.indexOf("function snapVersionCli(deal, rev) {");
-  if (i < 0) return ["no encuentro `function snapVersionCli(deal, rev) {`"];
+  const i = c.indexOf("function snapVersionCli(deal, rev, opts) {");
+  if (i < 0) return ["no encuentro `function snapVersionCli(deal, rev, opts) {`"];
   const resto = c.slice(i); const fin = resto.slice(1).search(/\n(?:function|const|let) [A-Za-z_]/);
   const cuerpo = resto.slice(0, fin < 0 ? undefined : fin + 1);
   const ret = canonico(cuerpo).match(/return \{v: rev \+ 1,[\s\S]*?\};/);
@@ -123,7 +123,9 @@ export function versionUnica(src) {
   if (!/\bverificacion\b/.test(ret[0])) fallos.push("la versión no congela `verificacion`: verificación y líneas se recalculan en la MISMA reevaluación");
   if (!/asignarLineas\(fsOp, deal\.rutEmisor\)/.test(cuerpo)) fallos.push("la línea de la versión no sale de asignarLineas(fsOp, deal.rutEmisor)");
   if (!/verifResumenDeal\(deal\)/.test(cuerpo) || !/verifFactura\(f, deal\)/.test(cuerpo)) fallos.push("la verificación de la versión no sale de verifResumenDeal/verifFactura");
-  if (!/function reevaluarCliente\(deal, usuario\) \{[\s\S]{0,600}repoSimVersions\.push\(deal\.id, nv\)/.test(c)) fallos.push("reevaluarCliente ya no emite la versión (`repoSimVersions.push(deal.id, nv)`)");
+  // Desde la regla 68 (ADR-0013) la emite el EVENTO, `evaluarOperacion`; «Re-evaluación de la simulación» pasa por él.
+  if (!/function evaluarOperacion\(deal, usuario, opts\) \{[\s\S]{0,1600}repoSimVersions\.push\(deal\.id, nv\)/.test(c)) fallos.push("evaluarOperacion ya no emite la versión (`repoSimVersions.push(deal.id, nv)`)");
+  if (!/function reevaluarCliente\(deal, usuario\) \{[\s\S]{0,700}evaluarOperacion\(deal, usuario, \{/.test(c)) fallos.push("reevaluarCliente ya no pasa por el evento de evaluación (regla 68)");
   return fallos;
 }
 /* (4-bis) TODO emisor de versión emite las dos decisiones sobre la misma selección. El segundo argumento de
@@ -144,7 +146,9 @@ export function emisoresCompletos(src) {
     if (/\.\.\.\w+/.test(segundo) && /\blinea:/.test(segundo) && !/\bverificacion:/.test(segundo))
       fallos.push(`línea ${k}: emite una versión que recorta \`linea\` y COPIA \`verificacion\` de la anterior (la factura retirada sigue adentro y el total es el viejo): línea y verificación describen selecciones distintas — «nunca en flujos aparte»`);
   }
-  if (n < 3) fallos.push(`sólo ${n} emisores de versión (se esperaban ≥ 3: v1 y vN de reevaluarCliente, retirarFacturaOferta)`);
+  // Desde la regla 68 los emisores son DOS: el evento (`evaluarOperacion`, que cubre simular y los dos re-evaluar) y el
+  // rechazo del comité (`aplicarRechazoComite`, con la versión que `rechazoComiteDecision` arma con `snapVersionCli`).
+  if (n < 2) fallos.push(`sólo ${n} emisores de versión (se esperaban ≥ 2: evaluarOperacion y aplicarRechazoComite)`);
   return fallos;
 }
 

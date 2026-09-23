@@ -13,9 +13,9 @@ timestamp: 2026-09-23T05:00:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **167/167 PASA**, **57 archivos de gate de contrato**
-(486 tests), **32 casos e2e** (32/32), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
-(96 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
+(`pipeline_comercial.jsx`), build standalone, **168/168 PASA**, **58 archivos de gate de contrato**
+(504 tests), **32 casos e2e** (32/32), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(97 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
 gate. La crónica del 17 al 19-09 vive en sus logs (ADR-0001 a 0006, el linter como paso 0-bis).
 El **20-09** entró todo lo de plata: **regla 8 sin proxy** (149, ADR-0008), **girar no es acción de NEX**
 (43, 147, 148), **ATR-01 en el handler** (145), el **id de la solicitud al comité** (146), las
@@ -35,11 +35,10 @@ telefónico ([log](./2026-09-22_el_deudor_decide_la_factura_se_llama.md)).
 > ## 🎯 Siguiente paso
 >
 > 1. **El backlog decidido, en rojo primero** (`Regresiones/Gaps_Proceso_Curse_2026-09-22.md` §2.2; los casos y su
->    orden en `vault/specs/proceso-curse/casos_de_prueba.md`): ADR-0013 (un evento, cinco versiones) · 0014 (cedida
->    ajena) · 0015 (comité que rechaza) · 0016 («ya no aplica») · 0017 (giro Normal con comité) · 0018 (la
->    verificación fallida marca y avisa; el ejecutivo retira y republica) · **0019** (al corte, la sin oferta se
->    elimina; la con oferta no se toca) · antigüedad ≤20 días · corte y reinicio por hora del tenant · M-19 en
->    `cerrarOferta` · el acuse como bandera del DTE. Cada uno con su regla, su gate y `CASOS_ESPERADOS` en el commit.
+>    orden en `vault/specs/proceso-curse/casos_de_prueba.md`). **Hechos el 23-09** (regla, gate y `CASOS_ESPERADOS` en
+>    cada commit): ADR-0013 (un evento, cinco versiones: regla 68, caso 168) · 0014 · 0015 · 0016 · 0017 · 0018 ·
+>    0019 · antigüedad ≤20 días · corte y reinicio por hora · M-19 en `cerrarOferta`. **Queda M-01**: el acuse como
+>    bandera del DTE en el activo, el layout y el generador (G-01: se muestra y no filtra).
 > 2. **UI**: el selector de sesión de la navbar, 1/3 más angosto y con elipsis (desborda a 1366 px) · el chip
 >    «Negociación» en una operación ya enviada a comité · **join de empresas SIEMPRE por RUT** (8 sitios; T1) ·
 >    `.bat` una vez · O01 · 28 · 13-quater.
@@ -48,9 +47,9 @@ La mesa por factura (53, 157) y el color del badge (54, 158); la firma cruza al 
 tabla es su propio panel (**56**); la mesa va **operación → deudor colapsable → factura** con **panel lateral** para
 las dos decisiones (53 ampliada); la nota es **rica con captura pegada** (**57**); la **oferta publicada se ve en el
 tubo** (**58**, `e2e-58`). Y el **proceso de curse documentado de punta a punta**: el spec
-(`Specs_Procesos/Evaluacion_Factura/spec-proceso-curse.md`; 40 cláusulas: 25 implementadas · 12 distinto · 3
-pendientes · 0 abiertas), el informe de **gaps** (36 G-nn + 12 documentales: 8 cerrados · 18 decididos · 0 por
-confirmar · 10 sin decisión), las **42 historias de usuario** (19 vigentes · 23 por implementar · 0 por confirmar) y
+(`Specs_Procesos/Evaluacion_Factura/spec-proceso-curse.md`; 40 cláusulas: 38 implementadas · 2 distinto · 0
+pendientes · 0 abiertas), el informe de **gaps** (36 G-nn + 12 documentales: 8 cerrados · 17 implementados · 1
+decidido · 0 por confirmar · 10 sin decisión), las **42 historias de usuario** (31 vigentes · 11 por implementar · 0 por confirmar) y
 los **casos de prueba** (143 ids, 133 con caso; 121 casos nuevos: e2e 50 · suite 66 · contrato 5). Las decisiones del
 usuario del 22 y 23-09 están en el log §8 y en **ADR-0013 … ADR-0019**; el 23-09 cerró las cinco preguntas que quedaban.
 

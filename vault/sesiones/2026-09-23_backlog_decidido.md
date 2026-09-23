@@ -282,3 +282,42 @@ entera: 34 · 6 · 0; §15 dos filas), gaps (G-11 en M-18 y G-36 cerrados; 13 im
 HU-33 CA-3 en su dirección nueva (28 · 14), CP-091/119/129/138–142 (caso 167 y `regla_67`; la pantalla sigue por e2e),
 `spec-verificacion-facturas.md` §1 y §9, `spec-ciclo-factura.md` §14, cifras (167/167; 96 reglas; 57 archivos de gate, 47
 por regla; 486 tests).
+
+## 9 · ADR-0013 · Un evento de evaluación, cinco motores, cinco versiones (regla 68, caso 168)
+
+**Qué cambió.** `evaluarOperacion(deal, usuario, opts)` es el ÚNICO evento: «Simular la oferta» (`simularOferta`, antes de
+escribir el negocio y sobre el negocio tal como va a quedar), «Re-evaluar operación» (`reevaluarOperacion`, desde la
+cabecera y desde el aviso «La selección cambió») y «Re-evaluación de la simulación» (`reevaluarCliente`, el único que
+pide el origen actualizado) son el mismo gesto con otro `origen` y `motivo`. `snapVersionCli(deal, rev, opts)` corre los
+cinco motores y devuelve `res`, `verificacion`, `linea`, `giro` (`giroDeVersion`, sobre la asignación recién evaluada) y
+`pricing` (`pricingDeVersion`: modo de tasa y condiciones, M-36) más `motoresFallidos`; `versionCompleta` rechaza la
+versión a medias (bitácora y auditoría «Evaluación fallida»); `contarVersiones` cuenta por motor y el pill del tab
+Otorgamiento lo muestra («N versiones · 5 motores»). `tasaDelNegocio` decide la tasa en un sitio para la pantalla y la
+versión. La regularización del origen la pide sólo `opts.origenActualizado`. El rechazo del comité arma su versión con el
+mismo `snapVersionCli` (línea recortada). G-09 cerrado: sin marca de recálculo, sin esqueletos del tubo, sin banner; la
+bitácora dice «Facturas nuevas … al pool disponible» / «Facturas agregadas al pool».
+
+**Lo que costó / sorpresas.**
+- **La pantalla desmintió la primera versión**: «Todo lo disponible» incorpora y simula EN EL MISMO TICK
+  (`onSugerirOferta` + `onSimular`), `setDeals` no ejecuta el updater en el acto y `simularOferta` leía `dealsRef.current`
+  con la oferta vacía: la v1 salía con `res` y las otras cuatro secciones en `null`. Los tres editores del paquete
+  (`incorporarFacturasOferta`, `aplicarSugerencia`, `retirarFacturaOferta`) adelantan ahora la foto al ref
+  (`dealsRef.current = …map(upd)`); el render la vuelve a escribir con lo mismo.
+- **El tubo no veía la versión**: releer `repoSimVersions` dentro del aviso `nex-simulado` seguía dando 0 —el postMessage
+  llega ANTES de que el storage de la otra pestaña se propague al renderer—. Se escucha el evento `storage` del navegador
+  (dispara cuando la escritura ya es visible) y se re-emiten las filas con versión: la fila pasó de «Excede la línea
+  M$2.212,2» (caída a `evCli`) a «Requiere comité M$2.381» (la asignación de la versión).
+- **«2 versiónes»**: el pill tenía `versión{… "" : "es"}` desde siempre; se vio al contar por motor. Corregido.
+- **Gates re-anclados, no aflojados**: `regla_66` (la marca la dispara el evento), `regla_14` (4) (la emite
+  `evaluarOperacion`; `reevaluarCliente` pasa por él) y (4-bis) (dos emisores: el evento y el comité), `regla_12_bis`
+  (la sonda quitaba el primer `simulado: true`, que ahora es el del snapshot del evento y no el del patch).
+  `contarVersiones` nació sin lector y `auditar_muerto` lo cazó: el lector es el pill.
+- **`asignarLineas` se reemplaza por nombre en el caso 168** para el motor caído: las funciones de nivel módulo son
+  bindings globales del script clásico, así que la suite puede sustituirlas y restaurarlas en el `finally`.
+
+**Documentos:** regla 68 (punteros en la 13 y la 14; la 66 y `ui_detalle_y_tubo.md` apuntan al evento), fila en
+`invariantes.md`, `spec-otorgamiento.md` §2, `spec-gestion-excepciones.md` §4.1 y §5.5, `spec-asignacion-lineas.md` §4.3
+(cinco bloques), `spec-ciclo-factura.md` §23c fila 5, spec del curse (M-13/M-24/M-26/M-36 implementadas: 38 · 2 · 0; §7,
+§7.1, §8 y §15), gaps (G-09/G-10/G-22/G-32 y GD-10 cerrados: 17 implementados · 1 decidido), HU-12/13/21 vigentes (31 · 11),
+CP-031/033/034/053/054/122/123/134/135 (CP-035/036 y las pantallas siguen e2e), cifras (168/168; 97 reglas; 58 archivos de
+gate, 48 por regla; 504 tests).

@@ -10965,9 +10965,24 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         <div className="t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>
           Re-evaluación de la simulación
         </div>
-        <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: C.indigo }}>
-          {shown.length} versión{shown.length === 1 ? "" : "es"}
-        </span>
+        {(() => {
+          // REGLA 68 · La versión es la tupla de los cinco motores, así que el conteo por motor sale de las versiones
+          // emitidas y tiene que ser el mismo en los cinco; si no lo es (versiones anteriores a la regla), se dice.
+          const nMot = contarVersiones(shown);
+          const parejo = Object.values(nMot).every((n) => n === shown.length);
+          const detalle = Object.entries(nMot)
+            .map(([k, n]) => `${k} ${n}`)
+            .join(" · ");
+          return (
+            <span
+              className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold"
+              style={{ backgroundColor: parejo ? "#F1ECFF" : "#FFF7ED", color: parejo ? C.indigo : C.amber, cursor: "help" }}
+              title={`Versiones por motor: ${detalle}${parejo ? " — las cinco cuentan igual (regla 68)" : " — no cuentan igual: hay versiones anteriores a la regla 68"}`}
+            >
+              {shown.length} {shown.length === 1 ? "versión" : "versiones"} · {MOTORES_VERSION.length} motores
+            </span>
+          );
+        })()}
       </div>
       <div className="mt-1.5 t10" style={{ color: C.sub, lineHeight: 1.5 }}>
         Cuando el ejecutivo obtiene el <b>contrato firmado</b>, el sistema de origen se actualiza. Al re-evaluar se vuelve a invocar la API y se guarda una{" "}
@@ -12700,6 +12715,7 @@ function DealDrawer({
   onReabrir,
   onSugerirOferta,
   onSimular,
+  onEvaluar,
   onLimpiarSimulacion,
   onPublicar,
   onCerrarOferta,
@@ -12841,6 +12857,7 @@ function DealDrawer({
   const [detReeval, setDetReeval] = useState(false);
   const reevaluarLinea = () => {
     setDetReeval(true);
+    if (onEvaluar) onEvaluar(deal.id); // regla 68: el gesto es el evento, y el evento emite la versión
     setTimeout(() => {
       setDetReeval(false);
       setReevalPend(false);
@@ -13651,22 +13668,6 @@ function DealDrawer({
           </div>
         </div>
         <div className={fullPage ? "p-5" : "flex-1 overflow-y-auto p-5"}>
-          {/* Proceso en background (socket): llegaron facturas nuevas del cliente y el backend está
-              re-simulando la oportunidad. La UI lo informa sin bloquear la navegación. */}
-          {deal.actualizando && !fullPage && (
-            <div className="mb-3 flex items-start gap-2.5 rounded-xl p-3" style={{ backgroundColor: "#F5F3FF", border: "1px solid #DDD6FE" }}>
-              <RotateCcw size={15} className="pl-spin" style={{ color: "#7C3AED", marginTop: 1 }} />
-              <div>
-                <div className="t12 font-semibold" style={{ color: "#7C3AED" }}>
-                  Actualizando la oportunidad…
-                </div>
-                <div className="t10" style={{ color: C.sub }}>
-                  Llegaron facturas nuevas del cliente. Se está recalculando la simulación con el paquete actualizado; los montos y condiciones pueden cambiar
-                  en unos segundos.
-                </div>
-              </div>
-            </div>
-          )}
           {tab === "mensajeria" && <DealMensajeria deal={deal} usuario={usuario} />}
           {tab === "verificacion" && (
             <div className="mt-2">
@@ -13940,14 +13941,13 @@ function DealDrawer({
                 const tasaPondRiesgo = +proRiesgo.tasaEquivalente.toFixed(2); // se muestra con 2
                 // Regla comercial: no ofertar por debajo de la tasa del ÚLTIMO negocio cursado del cliente.
                 // Si la ponderada por riesgo es menor, la simulación usa la tasa del último negocio.
-                const tul = tasaUltimoNegocio(deal);
-                // Selección de la tasa del negocio — política del factoring (Configuración › Operación):
-                //  · "riesgo" → siempre la ponderada por riesgo del deudor
-                //  · "ultima" → siempre la del último negocio cursado del cliente (si existe)
-                //  · "mayor"  → la mayor de ambas (no ofertar bajo la última tasa cursada)
-                const modoTasa = CFG_ACTIVA.tasaModo || "mayor";
-                const usaUltNeg = !!tul && (modoTasa === "ultima" || (modoTasa === "mayor" && tasaPondRiesgo < tul.tasa));
-                const tasaPond = usaUltNeg ? tul.tasa : tasaPondRiesgo; // tasa EFECTIVA de la simulación
+                // Selección de la tasa del negocio — política del factoring (Configuración › Operación). La decide
+                // `tasaDelNegocio` (regla 68), el mismo sitio que lee la versión de pricing: lo que se muestra y lo que
+                // se versiona no pueden separarse.
+                const tn = tasaDelNegocio(deal, tasaPondRiesgo, CFG_ACTIVA);
+                const tul = tn.ultNeg;
+                const usaUltNeg = tn.usaUltNeg;
+                const tasaPond = tn.tasaEfectiva; // tasa EFECTIVA de la simulación
                 // Con la tasa del último negocio el cálculo es TOP-DOWN: esa tasa única sobre el
                 // plazo de cada documento. Antes se escalaba el interés por el cociente de tasas,
                 // que es una regla de tres sobre un descuento racional y no es lo mismo.
@@ -14658,18 +14658,17 @@ function DealDrawer({
                     )}
                     {negTab === "detalle" &&
                       (() => {
-                        // Estado de carga: mientras se resuelven las consultas por deudor (o mientras el
-                        // backend re-simula la oportunidad por facturas nuevas) se muestra el esqueleto.
-                        // `actualizando` sirve en el DRAWER, que vive en el mismo documento que el tubo
-                        // y ve cuando el proceso termina. La pagina completa es un SNAPSHOT del deal al
-                        // momento de abrirla: ahi la marca no se limpia nunca y dejaba el detalle en
-                        // esqueleto para siempre. Ademas la corrida ya no re-simula: las facturas nuevas
-                        // solo engrosan el pool disponible, y eso no obliga a esconder la pantalla.
-                        if (detCargando || (deal.actualizando && !fullPage))
+                        // Estado de carga: mientras se resuelven las consultas por deudor se muestra el
+                        // esqueleto. La corrida de facturas nuevas NO re-simula (regla 14): sólo engrosa el
+                        // pool disponible, y eso no obliga a esconder la pantalla. La marca de «recálculo
+                        // en curso» que antes lo hacía se retiró con la regla 68 (ADR-0013): anunciaba una
+                        // evaluación que nunca ocurría, y en la pestaña propia —un snapshot del deal— no se
+                        // limpiaba nunca.
+                        if (detCargando)
                           return (
                             <div className="mt-3">
                               <div className="t10 uppercase tracking-wide" style={{ color: C.faint }}>
-                                {deal.actualizando && !fullPage ? "Actualizando deudores de la oferta…" : "Cargando deudores de la oferta…"}
+                                Cargando deudores de la oferta…
                               </div>
                               <div className="mt-2">
                                 <SkeletonDeudores n={3} />
@@ -16039,7 +16038,10 @@ function DealDrawer({
                                     diasPond={diasPond}
                                     tasaEqExacta={tasaEqExacta}
                                     reevalPend={reevalPend}
-                                    onReevaluar={() => setReevalPend(false)}
+                                    onReevaluar={() => {
+                                      if (onEvaluar) onEvaluar(deal.id); // regla 68
+                                      setReevalPend(false);
+                                    }}
                                     onSim={setSimOp}
                                     usuarioCod={usuario}
                                     deudoresOp={validas}
@@ -21328,103 +21330,91 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                     produce la corrida horaria, que ya no simula el negocio: la composición de deudores
                     sí aguanta una hora, la tarifa no. Se actualiza sola cuando llegan facturas. */}
                     <td className="px-2 py-2.5 align-top" style={{ color: C.sub }}>
-                      {d.actualizando ? (
-                        <div title="Actualizando la oportunidad: se está re-analizando qué deudores entran con el paquete actualizado.">
-                          <Skel w={140} h={14} r={6} />
-                          <div className="mt-1">
-                            <Skel w={182} h={18} r={999} />
-                          </div>
-                          <div className="mt-1">
-                            <Skel w={140} h={18} r={999} />
-                          </div>
-                        </div>
-                      ) : (
-                        (() => {
-                          const an = analisisDeudoresDeDeal(d);
-                          if (!an)
-                            return (
-                              <span className="t10" style={{ color: C.faint }}>
-                                Sin deudores analizados
-                              </span>
-                            );
-                          // La partición por LÍNEA es un LOOKUP sobre el listado (A23), no una corrida del
-                          // motor: el tubo dibuja ~100 filas y asignar por fila costaría 100 asignaciones
-                          // completas. Lo que se gana en costo se paga en precisión, y el precio está
-                          // declarado en `capacidadDeudores`: es una cota superior, no una asignación.
-                          const cap = capacidadDeudores(an.lista, d.rutEmisor);
-                          // Los tres tramos se dibujan SIEMPRE, también en cero —el tramo ausente dice que no
-                          // hay nada de ese tipo, y ocultarlo dejaba la duda de si la columna lo mostraba— y
-                          // en cero se rotulan con el mismo conteo («0 deudores >4.2»), para que los tres se
-                          // lean en paralelo en vez de alternar entre afirmación y negación.
-                          // El conteo va CON su unidad dentro de la frase («★ 1 deudor Prime»): suelto entre
-                          // la etiqueta y el monto no se sabía si eran deudores o facturas.
-                          const chipTramo = (k, txt, fg, bg, tip) => {
-                            const hay = cap[k].n > 0;
-                            return (
-                              <span
-                                key={k}
-                                className="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 t9 font-semibold"
-                                style={{ backgroundColor: hay ? bg : "#EDEEF1", color: hay ? fg : C.sub, cursor: "help" }}
-                                title={tip}
-                              >
-                                {hay ? `${txt(cap[k].n)} · ${fmtMM(cap[k].monto)}` : txt(0)}
-                              </span>
-                            );
-                          };
-                          const plural = (n2, sing, plu) => `${n2} ${n2 === 1 ? sing : plu}`;
+                      {(() => {
+                        const an = analisisDeudoresDeDeal(d);
+                        if (!an)
                           return (
-                            <>
-                              <div
-                                className="t10"
-                                title={`La OPORTUNIDAD reúne ${an.nDeudores} deudor(es) y ${an.nFacturas} factura(s) por ${fmtMM(an.monto)}: todo lo que el motor encontró disponible del cliente, esté o no en la oferta. «Monto» muestra sólo lo seleccionado, por eso las dos cifras no coinciden. El motor asigna línea en este orden: Prime, luego Nota Deudor sobre 4,2, y el resto con lo que sobre.`}
-                                style={{ color: C.sub, cursor: "help" }}
-                              >
-                                {/* Las tres cifras se destacan por igual —deudores, facturas y monto son la misma
+                            <span className="t10" style={{ color: C.faint }}>
+                              Sin deudores analizados
+                            </span>
+                          );
+                        // La partición por LÍNEA es un LOOKUP sobre el listado (A23), no una corrida del
+                        // motor: el tubo dibuja ~100 filas y asignar por fila costaría 100 asignaciones
+                        // completas. Lo que se gana en costo se paga en precisión, y el precio está
+                        // declarado en `capacidadDeudores`: es una cota superior, no una asignación.
+                        const cap = capacidadDeudores(an.lista, d.rutEmisor);
+                        // Los tres tramos se dibujan SIEMPRE, también en cero —el tramo ausente dice que no
+                        // hay nada de ese tipo, y ocultarlo dejaba la duda de si la columna lo mostraba— y
+                        // en cero se rotulan con el mismo conteo («0 deudores >4.2»), para que los tres se
+                        // lean en paralelo en vez de alternar entre afirmación y negación.
+                        // El conteo va CON su unidad dentro de la frase («★ 1 deudor Prime»): suelto entre
+                        // la etiqueta y el monto no se sabía si eran deudores o facturas.
+                        const chipTramo = (k, txt, fg, bg, tip) => {
+                          const hay = cap[k].n > 0;
+                          return (
+                            <span
+                              key={k}
+                              className="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 t9 font-semibold"
+                              style={{ backgroundColor: hay ? bg : "#EDEEF1", color: hay ? fg : C.sub, cursor: "help" }}
+                              title={tip}
+                            >
+                              {hay ? `${txt(cap[k].n)} · ${fmtMM(cap[k].monto)}` : txt(0)}
+                            </span>
+                          );
+                        };
+                        const plural = (n2, sing, plu) => `${n2} ${n2 === 1 ? sing : plu}`;
+                        return (
+                          <>
+                            <div
+                              className="t10"
+                              title={`La OPORTUNIDAD reúne ${an.nDeudores} deudor(es) y ${an.nFacturas} factura(s) por ${fmtMM(an.monto)}: todo lo que el motor encontró disponible del cliente, esté o no en la oferta. «Monto» muestra sólo lo seleccionado, por eso las dos cifras no coinciden. El motor asigna línea en este orden: Prime, luego Nota Deudor sobre 4,2, y el resto con lo que sobre.`}
+                              style={{ color: C.sub, cursor: "help" }}
+                            >
+                              {/* Las tres cifras se destacan por igual —deudores, facturas y monto son la misma
                             lectura— con el MISMO tratamiento que «$700M aprobada» en la columna Línea:
                             t10 heredado del contenedor y `font-semibold`. Con <b> pesaban más que el
                             propio título de la fila. */}
-                                <span className="font-semibold" style={{ color: C.ink }}>
-                                  {an.nDeudores}
-                                </span>{" "}
-                                deudor{an.nDeudores === 1 ? "" : "es"} ·{" "}
-                                <span className="font-semibold" style={{ color: C.ink }}>
-                                  {an.nFacturas}
-                                </span>{" "}
-                                factura{an.nFacturas === 1 ? "" : "s"} ·{" "}
-                                <span className="font-semibold" style={{ color: C.ink }}>
-                                  {fmtMM(an.monto)}
-                                </span>
-                              </div>
-                              {/* Una fila por tramo, SIEMPRE: en columna los tres chips quedan alineados a la
+                              <span className="font-semibold" style={{ color: C.ink }}>
+                                {an.nDeudores}
+                              </span>{" "}
+                              deudor{an.nDeudores === 1 ? "" : "es"} ·{" "}
+                              <span className="font-semibold" style={{ color: C.ink }}>
+                                {an.nFacturas}
+                              </span>{" "}
+                              factura{an.nFacturas === 1 ? "" : "s"} ·{" "}
+                              <span className="font-semibold" style={{ color: C.ink }}>
+                                {fmtMM(an.monto)}
+                              </span>
+                            </div>
+                            {/* Una fila por tramo, SIEMPRE: en columna los tres chips quedan alineados a la
                           izquierda y se comparan de un vistazo entre filas del tubo. Con flex-wrap el
                           reparto dependía del ancho de cada monto y los tramos bailaban de línea. */}
-                              <div className="mt-1 flex flex-col items-start gap-1">
-                                {chipTramo(
-                                  "primeConLinea",
-                                  (n2) => `★ ${plural(n2, "Prime con línea", "Prime con línea")}`,
-                                  C.indigo,
-                                  C.lilac,
-                                  "Deudores Prime que HOY tienen línea con este cliente —propia (LF2/LF3) o cubierta por el comodín (LF4/LF1)— y a los que además les queda disponible en su línea global. El monto es lo que aportan a la oferta: es una COTA, no lo que se va a girar. La asignación es factura a factura contra los tres niveles a la vez y el cupo del comodín es uno solo para todos, así que el monto cursable lo fija la simulación, no esta suma.",
-                                )}
-                                {chipTramo(
-                                  "otrosConLinea",
-                                  (n2) => `${plural(n2, "Otro con línea", "Otros con línea")}`,
-                                  "#2563EB",
-                                  "#EFF6FF",
-                                  "Deudores NO Prime con línea disponible hoy, con el mismo criterio que la fila de arriba. Toman línea después de los Prime, así que su monto es todavía más una cota: lo que quede tras el primer tramo.",
-                                )}
-                                {chipTramo(
-                                  "sinLinea",
-                                  (n2) => `${plural(n2, "deudor sin línea", "deudores sin línea")}`,
-                                  "#9CA3AF",
-                                  "#F3F4F6",
-                                  "Deudores sin línea disponible con este cliente: no tienen línea de par, el comodín no les alcanza, o su línea global de deudor está copada. NO se distingue si son Prime: sin cupo, la clasificación no cambia lo que se puede comprar hoy. Se resuelve pidiendo línea al comité.",
-                                )}
-                              </div>
-                            </>
-                          );
-                        })()
-                      )}
+                            <div className="mt-1 flex flex-col items-start gap-1">
+                              {chipTramo(
+                                "primeConLinea",
+                                (n2) => `★ ${plural(n2, "Prime con línea", "Prime con línea")}`,
+                                C.indigo,
+                                C.lilac,
+                                "Deudores Prime que HOY tienen línea con este cliente —propia (LF2/LF3) o cubierta por el comodín (LF4/LF1)— y a los que además les queda disponible en su línea global. El monto es lo que aportan a la oferta: es una COTA, no lo que se va a girar. La asignación es factura a factura contra los tres niveles a la vez y el cupo del comodín es uno solo para todos, así que el monto cursable lo fija la simulación, no esta suma.",
+                              )}
+                              {chipTramo(
+                                "otrosConLinea",
+                                (n2) => `${plural(n2, "Otro con línea", "Otros con línea")}`,
+                                "#2563EB",
+                                "#EFF6FF",
+                                "Deudores NO Prime con línea disponible hoy, con el mismo criterio que la fila de arriba. Toman línea después de los Prime, así que su monto es todavía más una cota: lo que quede tras el primer tramo.",
+                              )}
+                              {chipTramo(
+                                "sinLinea",
+                                (n2) => `${plural(n2, "deudor sin línea", "deudores sin línea")}`,
+                                "#9CA3AF",
+                                "#F3F4F6",
+                                "Deudores sin línea disponible con este cliente: no tienen línea de par, el comodín no les alcanza, o su línea global de deudor está copada. NO se distingue si son Prime: sin cupo, la clasificación no cambia lo que se puede comprar hoy. Se resuelve pidiendo línea al comité.",
+                              )}
+                            </div>
+                          </>
+                        );
+                      })()}
                     </td>
                     {/* SIMULACIÓN: todo lo que produce simular la oferta, en un panel único: monto,
                     composición, condiciones comerciales y las compuertas que deciden si puede avanzar.
@@ -21553,49 +21543,7 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                       dentro de la misma familia: sigue leyéndose como un hueco donde va la simulación
                       (que es lo que es) en vez de levantarse como si fuera un elemento nuevo. */}
                       <div className="pl-sim rounded-xl px-3 py-1.5">
-                        {d.actualizando ? (
-                          /* El esqueleto copia el ESTADO al que va a aterrizar la fila —`d.simulado` no
-                         cambia durante la recarga— con la misma altura interior de 72 que tienen los
-                         dos estados. Antes dibujaba siempre el estado rico y con `flex-wrap`: los
-                         cuatro bloques no cabían en una fila, envolvían en dos y la card daba un salto
-                         de alto al terminar. Y en filas que aterrizan en «Sin simular» prometía
-                         condiciones y compuertas que no iban a aparecer. */
-                          d.simulado ? (
-                            <div
-                              className="flex items-center gap-4"
-                              style={{ minHeight: 72 }}
-                              title="Actualizando la oportunidad: se están recalculando monto, condiciones y compuertas con el paquete actualizado."
-                            >
-                              <div className="flex shrink-0 justify-center" style={{ minWidth: 104 }}>
-                                <Skel w={92} h={20} r={6} />
-                              </div>
-                              <div className="min-w-0" style={{ borderLeft: `1px solid ${C.line}`, paddingLeft: 16 }}>
-                                <div className="py-1">
-                                  <Skel w={150} h={12} r={6} />
-                                </div>
-                                <div className="py-1">
-                                  <Skel w={210} h={12} r={6} />
-                                </div>
-                                <div className="py-1">
-                                  <Skel w={196} h={12} r={6} />
-                                </div>
-                              </div>
-                              <div className="flex shrink-0 flex-col gap-1" style={{ borderLeft: `1px solid ${C.line}`, paddingLeft: 16 }}>
-                                <Skel w={168} h={18} r={999} />
-                                <Skel w={186} h={18} r={999} />
-                                <Skel w={150} h={18} r={999} />
-                              </div>
-                            </div>
-                          ) : (
-                            <div
-                              className="flex items-center"
-                              style={{ minHeight: 72 }}
-                              title="Actualizando la oportunidad: se está recalculando con el paquete actualizado."
-                            >
-                              <Skel w={96} h={14} r={6} />
-                            </div>
-                          )
-                        ) : !d.simulado ? (
+                        {!d.simulado ? (
                           /* Sin simular la caja se muestra igual, vacía: deja ver que ahí va algo y que
                          falta un paso, en vez de una celda en blanco que se lee como dato perdido. */
                           <div
@@ -21625,11 +21573,10 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                             // MÁS fiel que recalcular, que puede dar distinto si el origen se movió desde
                             // entonces. Es el mismo criterio de la regla 13 aplicado al tubo.
                             // Sin versión se cae a `evCli`, la lectura de CLIENTE: el monto contra la
-                            // suma de sus líneas (LF1–LF4), que no necesita motor. Y hace falta de verdad,
-                            // no es defensivo: la versión la persiste `reevaluarCliente`, o sea el botón
-                            // «Re-evaluar», y NO `simularOferta` — así que una operación simulada y todavía
-                            // no re-evaluada no tiene ninguna. (La regla 13 dice «cada simulación emite una
-                            // versión»; el código emite sólo al re-evaluar. Queda anotado como desfase.)
+                            // suma de sus líneas (LF1–LF4), que no necesita motor. Desde la regla 68
+                            // (ADR-0013) la versión la emite el evento de evaluación al SIMULAR, así que
+                            // toda operación simulada tiene la suya; sin versión quedan las fixtures y lo
+                            // simulado antes de la regla, y para ésas sigue haciendo falta la caída.
                             const ev = facsC && d.rutEmisor ? lineaDeVersion(d) : null;
                             // Sin facturas itemizadas la única lectura posible es el monto contra la línea
                             // disponible del cliente; se dice en el tooltip para no confundirla con la
@@ -23575,17 +23522,25 @@ function fmtVarCli(k, val) {
 // versión inmutable con los valores recibidos. Re-evaluar tras la firma genera una nueva versión (rev+1)
 // cuyos valores actualizados pueden reparar las excepciones re-evaluables desde el origen.
 let SIM_VERSIONS = {}; // { [dealId]: [ { v, rev, ts, origen, vars, estado, nApr, nExc, nRech } ] }
-function snapVersionCli(deal, rev) {
+// LA VERSIÓN DE LA OPERACIÓN (regla 68, ADR-0013): la tupla de los CINCO motores sobre el mismo paquete —otorgamiento
+// (`vars`/`res`), verificación, línea, giro y pricing— con número, hora, política y build. La emite `evaluarOperacion`,
+// que es el único evento: simular, «Re-evaluar operación» y «Re-evaluación de la simulación» son el mismo gesto con otro
+// `origen`. `opts`: `origenActualizado` (el mock del origen que regulariza las variables re-evaluables: sólo la
+// re-evaluación de la simulación), `linea` (el recorte que trae el rechazo del comité, regla 65: nunca se re-asigna),
+// `origen` y `motivo` (texto y código del evento).
+function snapVersionCli(deal, rev, opts) {
+  const o = opts || {};
   // Mismo set de variables que la evaluación en vivo: documental (apiVarsCliente) + comportamiento
   // (varsModeloExt: varVenta, notaCliente, mora interna, pagaré firmado, cliente nuevo, línea, precios…).
   // Así el snapshot versionado coincide con lo que muestran las reglas y el diff de VARIABLES es consistente
   // con el diff de REGLAS (antes faltaba varsModeloExt → esas reglas caían a excepción espuria y al re-evaluar
   // cambiaban sin que ninguna variable del JSON lo reflejara).
   const vars = { ...apiVarsCliente(deal, rev), ...varsModeloExt(deal) };
-  if ((rev || 0) >= 1) {
-    // Re-evaluación: tras la firma, el origen regulariza las variables RE-EVALUABLES (documentación, garantías,
-    // vigencias, estado y comportamiento comercial ajustable). Los datos de bureau FIRMES (CMF/ACHEF/TGR/DICOM
-    // mora y castigos) NO cambian → sus reglas (no re-evaluables) siguen en excepción/rechazo.
+  if (o.origenActualizado) {
+    // Re-evaluación de la SIMULACIÓN: tras la firma, el origen regulariza las variables RE-EVALUABLES (documentación,
+    // garantías, vigencias, estado y comportamiento comercial ajustable). Los datos de bureau FIRMES (CMF/ACHEF/TGR/DICOM
+    // mora y castigos) NO cambian → sus reglas (no re-evaluables) siguen en excepción/rechazo. Es el mock del origen:
+    // lo pide sólo ese gesto (regla 68), no cualquier versión con número mayor que uno.
     Object.assign(vars, {
       pagareFirmado: true,
       lineaExt: false,
@@ -23657,12 +23612,17 @@ function snapVersionCli(deal, rev) {
   const fsOp = (deal && deal.facturasOp) || [];
   let linea = null,
     verificacion = null;
+  // Un motor que REVIENTA se anota y la versión no se emite (regla 68): cinco secciones o ninguna. Sin facturas no hay
+  // nada que evaluar en línea, verificación, giro ni pricing: `null` no es un fallo, es «vacío» (caso 124).
+  const fallidos = [];
   // Aceptada en adelante, una versión nueva no re-asigna: RECORTA la anterior (ver recortarAsignacion).
   const aceptada = !!(deal && ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage));
   const vPrev = (deal && SIM_VERSIONS[deal.id]) || [];
   const lineaPrev = vPrev.length ? vPrev[vPrev.length - 1].linea : null;
   try {
-    if (aceptada && lineaPrev) {
+    if (o.linea !== undefined)
+      linea = o.linea; // el rechazo del comité trae su recorte (regla 65)
+    else if (aceptada && lineaPrev) {
       linea = recortarAsignacion(
         lineaPrev,
         fsOp.map((f) => f.id),
@@ -23704,6 +23664,7 @@ function snapVersionCli(deal, rev) {
     }
   } catch (e) {
     linea = null;
+    fallidos.push("línea: " + ((e && e.message) || e));
   }
   try {
     if (fsOp.length)
@@ -23716,12 +23677,30 @@ function snapVersionCli(deal, rev) {
       };
   } catch (e) {
     verificacion = null;
+    fallidos.push("verificación: " + ((e && e.message) || e));
+  }
+  // REGLA 68 · Los otros dos motores, en la misma versión: el GIRO (GE/GN por deudor sobre ESTA asignación, que es la
+  // que se simuló) y el PRICING (con qué modo de tasa y qué condiciones se simuló). Antes corrían sólo en el render.
+  let giro = null,
+    pricing = null;
+  try {
+    giro = fsOp.length ? giroDeVersion(deal, fsOp, { linea }) : null;
+  } catch (e) {
+    giro = null;
+    fallidos.push("giro: " + ((e && e.message) || e));
+  }
+  try {
+    pricing = fsOp.length ? pricingDeVersion(deal, fsOp) : null;
+  } catch (e) {
+    pricing = null;
+    fallidos.push("pricing: " + ((e && e.message) || e));
   }
   return {
     v: rev + 1,
     rev,
     ts: tsEval,
-    origen: rev === 0 ? "Evaluación inicial (simulación)" : "Re-evaluación · JSON API actualizado tras firma",
+    origen: o.origen || (rev === 0 ? "Evaluación inicial (simulación)" : "Re-evaluación de la operación"),
+    motivo: o.motivo || (rev === 0 ? "simulacion" : "reevaluacion"),
     vars,
     res,
     estado,
@@ -23730,6 +23709,9 @@ function snapVersionCli(deal, rev) {
     nRech,
     linea,
     verificacion,
+    giro,
+    pricing,
+    motoresFallidos: fallidos,
     politica: { ...pol },
     politicas: estampaPoliticas(tsEval, TENANT_ACTUAL),
     app: APP_VERSION,
@@ -23787,12 +23769,58 @@ const revOtorgActual = (deal, versiones) => {
   const todas = versiones || (typeof SIM_VERSIONS !== "undefined" ? SIM_VERSIONS : {}) || {};
   return Math.max(0, ((deal && todas[deal.id]) || []).length - 1);
 };
-function reevaluarCliente(deal, usuario) {
+// ── Regla 68 (ADR-0013) · UN EVENTO DE EVALUACIÓN: CINCO MOTORES, UNA VERSIÓN CON CINCO SECCIONES, O NINGUNA ────
+// «Al presionar simular se debe generar un evento que gatille todas las evaluaciones de los motores […] Cada motor debiera
+// tener una versión como el motor de otorgamiento y siempre debieran haber la misma cantidad de ejecuciones en todos los
+// motores» (el usuario, 22-09-2026). Simular, «Re-evaluar operación» y «Re-evaluación de la simulación» son el MISMO
+// evento con otro `origen`; la primera simulación emite la v1 (no hay v1 retroactiva en el producto). Las cinco
+// secciones cuentan igual porque son UNA versión: si un motor revienta no se emite nada y la vigente sigue siendo la
+// anterior, con la falla en la bitácora del sistema y en la auditoría. La regla 14 se conserva: el evento es un gesto
+// explícito del ejecutivo, nunca un cambio de selección por sí solo.
+const MOTORES_VERSION = ["res", "verificacion", "linea", "giro", "pricing"]; // otorgamiento = `res`
+function versionCompleta(v) {
+  return !!v && MOTORES_VERSION.every((k) => k in v) && !((v.motoresFallidos || []).length > 0);
+}
+// Cuántas versiones tiene cada motor: por construcción son el mismo número, y ESO es lo que la suite fija.
+function contarVersiones(versiones) {
+  const vs = versiones || [];
+  const n = {};
+  MOTORES_VERSION.forEach((k) => {
+    n[k === "res" ? "otorgamiento" : k] = vs.filter((v) => v && k in v).length;
+  });
+  return n;
+}
+function evaluarOperacion(deal, usuario, opts) {
+  const o = opts || {};
+  if (!deal || deal.id == null) return { ok: false, motivo: "sin_operacion", version: null };
   // Escritura vía repositorio: cada versión es un registro INMUTABLE (append-only), nunca se edita una
   // versión ya emitida. SERVER-SIDE: insert en `simulacion_version`, que es evidencia de la decisión.
   const vs = repoSimVersions.get(deal.id) || [];
-  if (!vs.length) repoSimVersions.push(deal.id, snapVersionCli(deal, 0)); // persiste la evaluación inicial (v1)
-  const nv = snapVersionCli(deal, (repoSimVersions.get(deal.id) || []).length); // siguiente rev → v2, v3, …
+  const nv = snapVersionCli(deal, vs.length, o);
+  const quien = (typeof USERS !== "undefined" && USERS[usuario]) || usuario || "—";
+  const nombre = (deal && (deal.cliente || deal.company || deal.name)) || (deal && deal.id) || "—";
+  if (!versionCompleta(nv)) {
+    const que = ((nv && nv.motoresFallidos) || []).join("; ") || "sección faltante";
+    logSys(
+      "error",
+      "evaluacion",
+      `Evaluación fallida · ${deal.id}: ${que} — no se emite versión (la vigente sigue siendo ${vs.length ? "la v" + vs.length : "ninguna"})`,
+      {
+        operacion: deal.id,
+        fallidos: (nv && nv.motoresFallidos) || [],
+      },
+    );
+    if (typeof registrarAuditoria === "function")
+      registrarAuditoria({
+        usuario: quien,
+        modulo: "Evaluación de la operación",
+        accion: "Evaluación fallida",
+        glosa: `${nombre} · ${que} · no se emite versión`,
+        empresaId: deal.id,
+        exito: false,
+      });
+    return { ok: false, motivo: "motor_fallido", fallidos: (nv && nv.motoresFallidos) || [], version: null };
+  }
   repoSimVersions.push(deal.id, nv);
   // Las excepciones ya resueltas por los apoderados (VISADO_STATE) CONSERVAN su decisión: re-evaluar trae datos
   // frescos del origen y no re-abre trabajo hecho ni pierde la excepción si la API devolviera el valor original.
@@ -23801,13 +23829,34 @@ function reevaluarCliente(deal, usuario) {
   const yaNoAplican = marcarExcepcionesQueYaNoAplican(deal, nv.v);
   if (typeof registrarAuditoria === "function")
     registrarAuditoria({
-      usuario: (typeof USERS !== "undefined" && USERS[usuario]) || usuario || "—",
-      modulo: "Otorgamiento · Visado Cliente",
-      accion: "Re-evaluación de simulación",
-      glosa: `${(deal && (deal.company || deal.name)) || (deal && deal.id) || "—"} · v${nv.v} · ${nv.estado} (${nv.nRech} rechazos · ${nv.nExc} excepciones)${yaNoAplican.length ? ` · ${yaNoAplican.length} excepción(es) ya no aplica(n)` : ""}`,
+      usuario: quien,
+      modulo: "Evaluación de la operación",
+      accion: nv.origen,
+      glosa:
+        `${nombre} · v${nv.v} · otorgamiento ${nv.estado} (${nv.nRech} rechazos · ${nv.nExc} excepciones)` +
+        (nv.linea ? ` · línea ${fmtMM(nv.linea.cursable)} cursable` : "") +
+        (nv.verificacion ? ` · verificación ${nv.verificacion.pend} pendiente(s) de ${nv.verificacion.total}` : "") +
+        (nv.giro ? ` · giro ${fmtMM(nv.giro.montoGirar || 0)}` : "") +
+        (nv.pricing ? ` · tasa ${nv.pricing.modo}${nv.pricing.tasaSimulada != null ? " " + nv.pricing.tasaSimulada + "%" : ""}` : "") +
+        (yaNoAplican.length ? ` · ${yaNoAplican.length} excepción(es) ya no aplica(n)` : ""),
+      empresaId: deal.id,
       exito: true,
     });
-  return nv;
+  return { ok: true, version: nv, yaNoAplican };
+}
+// «Re-evaluación de la simulación» (tab Otorgamiento): el mismo evento, con el origen actualizado —el mock de la API
+// que regulariza las variables re-evaluables tras la firma—. Una operación que nunca simuló (fixtures, legado) recibe
+// antes su evaluación de partida, para que el diff tenga contra qué compararse; en el producto la v1 la emite
+// «Simular la oferta» (regla 68).
+function reevaluarCliente(deal, usuario) {
+  const vs = repoSimVersions.get(deal.id) || [];
+  if (!vs.length) evaluarOperacion(deal, usuario, { origen: "Evaluación inicial (simulación)", motivo: "simulacion" });
+  const r = evaluarOperacion(deal, usuario, {
+    origenActualizado: true,
+    origen: "Re-evaluación · JSON API actualizado tras firma",
+    motivo: "reevaluacion_origen",
+  });
+  return r.version;
 }
 // ── Regla 66 (ADR-0016) · LA EXCEPCIÓN QUE LA VERSIÓN N YA NO LEVANTA SE MARCA, NO SE BORRA ──────────────────
 // Cuando una re-evaluación deja de levantar una excepción que ya estaba solicitada o visada, el criterio pasa a
@@ -23885,7 +23934,7 @@ function excepcionesQueYaNoAplican(items, sol, st, det, version, fecha) {
 }
 // LA MUTACIÓN sólo escribe lo que la decisión dice, y avisa: los tres repositorios, la tarea del aprobador (cerrada
 // con el motivo), el hilo «Aprobación de excepciones» (mensaje del sistema; se termina cuando ya no queda ninguna
-// excepción por visar en la operación), la bitácora y la auditoría. La llama `reevaluarCliente` tras emitir la versión.
+// excepción por visar en la operación), la bitácora y la auditoría. La llama `evaluarOperacion` tras emitir la versión (regla 68).
 function marcarExcepcionesQueYaNoAplican(deal, version) {
   if (!deal || deal.id == null) return [];
   const sol = repoSolicitudExc.get(deal.id) || {},
@@ -24943,6 +24992,63 @@ function girosDeDeal(deal, estado) {
 // Se cuentan las llamadas registradas, los veredictos congelados y los vetos de esta operación: son
 // los tres commits que pueden mover el veredicto sin pasar por el visado.
 let _GIRO_LISTA = {};
+// EL GIRO DE UNA VERSIÓN (regla 68): el mismo cálculo que la lista, sin memo y con la asignación de línea que se acaba
+// de evaluar (`estado.linea`), porque el memo de abajo va indexado por operación y firmaría con la línea anterior.
+function giroDeVersion(deal, facturas, estado) {
+  const congR = giroCongelado(deal, estado);
+  if (congR) return { ...congR, congelado: true };
+  const fs = (facturas || []).filter(Boolean);
+  const giroTotal = Math.round((deal && deal.giro) || 0);
+  if (!fs.length || !giroTotal) return null;
+  const r = prorratearConcepto(fs, giroTotal, (f) => f.monto || 0);
+  const docs = fs.map((f, i) => ({ id: f.folio || f.id || "f" + i, deudor: f.deudor, giro: r.asignado[i] }));
+  return asignarGiros(girosDeDeal(deal, { ...(estado || {}), facturas: fs, prorrateo: { filas: docs, montoGirar: giroTotal } }), {});
+}
+// LA SELECCIÓN DE LA TASA DEL NEGOCIO, en un solo sitio (regla 68): la usan el panel de condiciones del detalle y la
+// versión de pricing, para que lo que se muestra y lo que se versiona no se separen. Política del tenant
+// (`tasaModo`): «riesgo» = siempre la ponderada por riesgo del deudor · «ultima» = la del último negocio cursado
+// del cliente (si existe) · «mayor» = la mayor de ambas (no ofertar bajo la última tasa cursada).
+function tasaDelNegocio(deal, tasaRiesgo, cfg) {
+  const c = cfg || CFG_ACTIVA;
+  const modo = c.tasaModo || "mayor";
+  const ultNeg = tasaUltimoNegocio(deal);
+  const usaUltNeg = !!ultNeg && (modo === "ultima" || (modo === "mayor" && tasaRiesgo < ultNeg.tasa));
+  return { modo, ultNeg, usaUltNeg, tasaEfectiva: usaUltNeg ? ultNeg.tasa : tasaRiesgo };
+}
+// LA VERSIÓN DE PRICING (regla 68, M-36): con qué modo de tasa se simuló y qué condiciones quedaron asignadas —tasa
+// ponderada por riesgo, la del último negocio si mandó, la tasa de descuento del negocio, comisión, anticipo y gastos
+// del tenant— y cuánto se gira. Es trazabilidad: no cambia lo que el sistema decide, y la huella O05 sigue fijando el
+// paquete y no el precio (regla 23, caso 85).
+function pricingDeVersion(deal, facturas, cfg) {
+  const c = cfg || CFG_ACTIVA;
+  const fs = (facturas || []).filter(Boolean);
+  const docs = fs.map((f, i) => ({
+    id: f.folio || f.id || "f" + i,
+    deudor: f.deudor,
+    monto: Math.round(f.monto || 0),
+    dias: diasPagoDeudor(f.deudor),
+    tasa: +(spreadSugerido(f.deudor, deal).spread + c.costoFondo).toFixed(2),
+  }));
+  const pro = docs.length ? prorratearOperacion(docs, [], { antic: +c.anticipoDefault || 100 }) : null;
+  const tasaRiesgo = pro ? +pro.tasaEquivalente.toFixed(2) : null;
+  const tn = tasaDelNegocio(deal, tasaRiesgo, c);
+  return {
+    modo: tn.modo,
+    usaUltNeg: tn.usaUltNeg,
+    tasaRiesgo,
+    tasaUltNeg: tn.ultNeg ? tn.ultNeg.tasa : null,
+    tasaSimulada: tn.tasaEfectiva,
+    tasaDescuento: deal && deal.tasaDescuento != null ? +deal.tasaDescuento : null,
+    comision: Math.round((deal && deal.comision) || 0),
+    anticipoPct: c.anticipoDefault,
+    comisionPct: c.comisionPct,
+    comisionUF: c.comisionUF,
+    gastosCLP: c.gastosCLP,
+    gastoDocCLP: c.gastoDocCLP,
+    plazoEquivalente: pro ? pro.plazoEquivalente : null,
+    montoGirar: Math.round((deal && deal.giro) || 0),
+  };
+}
 function giroResumenDeal(deal, estado) {
   // El congelado gana, y se consulta PRIMERO: antes del cálculo, antes del memo y antes incluso de
   // exigir simulación (regla 43). Una asignación congelada existe porque la operación se INYECTÓ a
@@ -24963,9 +25069,7 @@ function giroResumenDeal(deal, estado) {
   const firma = `${VISADO_VER}|${fs.length}|${giroTotal}|${deal.stage}|${nTel}|${nVer}|${nVet}|${nVs}`;
   const hit = _GIRO_LISTA[deal.id];
   if (hit && hit.firma === firma) return hit.val;
-  const r = prorratearConcepto(fs, giroTotal, (f) => f.monto || 0);
-  const docs = fs.map((f, i) => ({ id: f.folio || f.id || "f" + i, deudor: f.deudor, giro: r.asignado[i] }));
-  const val = asignarGiros(girosDeDeal(deal, { ...(estado || {}), facturas: fs, prorrateo: { filas: docs, montoGirar: giroTotal } }), {});
+  const val = giroDeVersion(deal, fs, estado);
   _GIRO_LISTA[deal.id] = { firma, val };
   return val;
 }
@@ -42068,20 +42172,19 @@ function rechazoComiteDecision(deal, sol, versiones) {
   const vs = versiones || [];
   const prev = vs.length ? vs[vs.length - 1] : null;
   const origen = `Comité · línea rechazada (${sol.idProceso || "—"}) · ${retiradas.length} factura(s) del deudor retirada(s)`;
+  // La versión del rechazo es una versión COMPLETA (regla 68: cinco secciones): otorgamiento, verificación, giro y
+  // pricing se evalúan sobre el paquete que queda, y la LÍNEA es el recorte de la anterior, nunca una re-asignación.
+  const dealTrasRetiro = { ...deal, facturasOp: quedan, facturas: quedan.length, monto: +quedan.reduce((a, f) => a + (f.monto || 0), 0).toFixed(1) };
   const version =
     prev && prev.linea
-      ? {
-          ...prev,
-          v: vs.length + 1,
-          rev: vs.length,
-          ts: nowStamp(),
-          origen,
-          motivo: "comite_rechazo",
+      ? snapVersionCli(dealTrasRetiro, vs.length, {
           linea: recortarAsignacion(
             prev.linea,
             quedan.map((f) => f.id),
           ),
-        }
+          origen,
+          motivo: "comite_rechazo",
+        })
       : null;
   if (!quedan.length) return { aplica: true, perdida: true, retiradas, quedan: [], version, closeReason: "committee_reject" };
   const monto = +quedan.reduce((a, f) => a + (f.monto || 0), 0).toFixed(1);
@@ -49118,7 +49221,22 @@ export default function PipelineComercial() {
       }
     };
     window.addEventListener("message", onMsg);
-    return () => window.removeEventListener("message", onMsg);
+    // REGLA 68 · La versión que el DETALLE emite al simular vive en el storage; el tubo se entera por el evento `storage`
+    // del navegador —que dispara cuando la escritura de la otra pestaña ya es visible— y relee el repositorio para que
+    // la fila (`lineaDeVersion`, `giroResumenDeal`) lea la MISMA asignación que se acaba de simular. Releer dentro del
+    // aviso `nex-simulado` no alcanza: el postMessage llega antes de que el storage de la otra pestaña se propague
+    // (medido el 23-09-2026: el tubo releía y seguía en 0 versiones). Se re-emiten sólo las filas con versión.
+    const onStorage = (e) => {
+      if (!e || e.key !== "pc_repo_" + repoSimVersions.nombre) return;
+      repoSimVersions.recargar();
+      SIM_VERSIONS = repoSimVersions.all();
+      setDeals((prev) => prev.map((d) => (d && d.id != null && SIM_VERSIONS[d.id] ? { ...d } : d)));
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("message", onMsg);
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
   // Espejo en vivo: cualquier cambio en la conversación de una oportunidad cuyo WhatsApp del cliente
   // esté abierto (desde Prospección en adelante, incluidos los mensajes del Agente IA) se le reenvía.
@@ -49692,9 +49810,9 @@ export default function PipelineComercial() {
     emb.prospeccion += nuevos.length;
     if (emb.oferta != null) emb.oferta += nuevos.filter((d) => d.stage === "oferta").length; // pasaron por inbound, prospección y (las contactadas) oferta
     // PROCESO EN BACKGROUND (server-side ready): la llegada de facturas nuevas NO se aplica de forma
-    // síncrona. Se emite el evento (equivalente al push por socket del backend), la oportunidad queda
-    // en estado «actualizando» y el resultado re-simulado llega tras una latencia proporcional al
-    // volumen de documentos — anticipando operaciones con miles de facturas.
+    // síncrona. Se emite el evento (equivalente al push por socket del backend) y las facturas entran
+    // al pool disponible tras una latencia proporcional al volumen de documentos — anticipando
+    // operaciones con miles de facturas. No re-simula ni marca nada (regla 14, regla 68).
     const idsWarn = Object.keys(warn);
     logSys(
       "info",
@@ -49711,17 +49829,23 @@ export default function PipelineComercial() {
     );
     setDeals((prev) => {
       const ids = new Set(prev.map((d) => d.id));
-      const arr = prev.map((d) => (warn[d.id] ? { ...d, actualizando: true } : d));
-      return [...nuevos.filter((d) => !ids.has(d.id)), ...arr];
+      return [...nuevos.filter((d) => !ids.has(d.id)), ...prev];
     });
     if (idsWarn.length) {
       const totalDocs = idsWarn.reduce((s, k) => s + (warn[k].add || 0), 0);
       const latencia = Math.min(6000, cfgT.latenciaBaseMs + totalDocs * cfgT.latenciaPorDocMs); // latencia API + cómputo (config del tenant)
-      logSys("info", "background", `Recalculando ${idsWarn.length} oportunidad(es) por ${totalDocs} documento(s) nuevo(s) · latencia estimada ${latencia} ms`, {
-        operaciones: idsWarn,
-        documentos: totalDocs,
-        latenciaMs: latencia,
-      });
+      // Las facturas nuevas NO re-simulan nada (regla 14, ADR-0013): engrosan el pool disponible y la bitácora lo dice
+      // con esas palabras. Los rótulos anteriores anunciaban un recálculo que nunca ocurría (G-09, regla 68).
+      logSys(
+        "info",
+        "background",
+        `Facturas nuevas para ${idsWarn.length} oportunidad(es): ${totalDocs} documento(s) al pool disponible · latencia estimada ${latencia} ms`,
+        {
+          operaciones: idsWarn,
+          documentos: totalDocs,
+          latenciaMs: latencia,
+        },
+      );
       const aplicar = (d) => {
         const w = warn[d.id];
         if (!w) return d;
@@ -49732,7 +49856,6 @@ export default function PipelineComercial() {
         const suman = (w.fs || []).filter((f) => f && !yaHay.has(f.id != null ? f.id : f.folio));
         return {
           ...d,
-          actualizando: false,
           facturasDisponibles: suman.length ? [...(d.facturasDisponibles || []), ...suman] : d.facturasDisponibles,
           historialContacto: traza(d, `Llegaron ${w.add} factura(s) nueva(s) del cliente (${fmtMM(w.monto)}) — incorporadas a la oportunidad`),
         };
@@ -49740,7 +49863,7 @@ export default function PipelineComercial() {
       setTimeout(() => {
         setDeals((prev) => prev.map(aplicar));
         setSelected((s) => (s ? aplicar(s) : s));
-        logSys("info", "background", `Recálculo aplicado en ${idsWarn.length} oportunidad(es)`, { operaciones: idsWarn, latenciaMs: latencia });
+        logSys("info", "background", `Facturas agregadas al pool en ${idsWarn.length} oportunidad(es)`, { operaciones: idsWarn, latenciaMs: latencia });
       }, latencia);
     }
     setAcumulado(pendientes); // lo que excedió el tope de la hora queda para la próxima corrida
@@ -50931,6 +51054,10 @@ export default function PipelineComercial() {
         ...fin,
       };
     };
+    // La foto que leen los closures del MISMO tick se adelanta al render: «Todo lo disponible» incorpora y simula en
+    // un gesto, `setDeals` no ejecuta `upd` en el acto y el evento de la regla 68 leería el paquete anterior (medido el
+    // 23-09-2026: la v1 salía sin facturas). El ref se vuelve a escribir al renderizar, con lo mismo.
+    dealsRef.current = (dealsRef.current || []).map(upd);
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
   };
@@ -50974,12 +51101,33 @@ export default function PipelineComercial() {
         monto: dentro.length ? +dentro.reduce((s2, f) => s2 + (f.monto || 0), 0).toFixed(1) : d.monto,
       };
     };
+    // La foto que leen los closures del MISMO tick se adelanta al render: «Todo lo disponible» incorpora y simula en
+    // un gesto, `setDeals` no ejecuta `upd` en el acto y el evento de la regla 68 leería el paquete anterior (medido el
+    // 23-09-2026: la v1 salía sin facturas). El ref se vuelve a escribir al renderizar, con lo mismo.
+    dealsRef.current = (dealsRef.current || []).map(upd);
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
   };
   // SIMULAR: es lo ÚNICO que calcula condiciones comerciales, y sólo cuando el ejecutivo lo pide sobre
   // la selección que dejó. Hasta acá la oportunidad tiene deudores y montos, pero no precio.
+  // REGLA 68 (ADR-0013) · SIMULAR ES EL EVENTO DE EVALUACIÓN: corre los cinco motores y emite la versión —la primera
+  // simulación, la v1—. Se evalúa FUERA del updater de React (regla 22) sobre la foto del negocio con el paquete
+  // simulado; las finanzas se calculan UNA vez y viajan al patch, para que la versión y el negocio digan lo mismo
+  // (`calcularFinanzas` mueve el saldo CxC del cliente: dos llamadas darían dos giros distintos).
   const simularOferta = (id) => {
+    const d0 = (dealsRef.current || deals).find((x) => x.id === id) || null;
+    const fs0 = d0 ? itemizarFacturas(d0) : [];
+    const monto0 = +fs0.reduce((s2, f) => s2 + (f.monto || 0), 0).toFixed(1);
+    const fin0 = d0 ? finanzasDe(d0.cliente, d0.deudor, monto0) : null;
+    if (d0)
+      evaluarOperacion(
+        { ...d0, simulado: true, stage: d0.stage === "prospeccion" ? "oferta" : d0.stage, monto: monto0, facturas: fs0.length, ...fin0 },
+        usuario,
+        {
+          origen: (repoSimVersions.get(id) || []).length ? "Re-evaluación de la operación (simulación)" : "Simulación de la oferta",
+          motivo: "simulacion",
+        },
+      );
     const upd = (d) => {
       if (d.id !== id) return d;
       const fs = itemizarFacturas(d);
@@ -50995,7 +51143,7 @@ export default function PipelineComercial() {
         facturasOp: d.facturasOp,
         facturasDisponibles: d.facturasDisponibles,
         ofertaSugerida: d.ofertaSugerida,
-        ...finanzasDe(d.cliente, d.deudor, monto),
+        ...(fin0 && monto === monto0 ? fin0 : finanzasDe(d.cliente, d.deudor, monto)),
       };
       // El detalle vive en una PESTAÑA APARTE —se abre con `window.open` y un ticket con la foto del
       // negocio—, así que su estado no es el del tubo: sin avisar, la operación quedaba simulada acá y
@@ -51008,6 +51156,13 @@ export default function PipelineComercial() {
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
+  };
+  // REGLA 68 · «Re-evaluar operación» es el MISMO evento que simular, sobre el paquete tal como quedó y sólo cuando el
+  // ejecutivo lo pide (regla 14). Emite la versión siguiente; no toca el negocio.
+  const reevaluarOperacion = (id) => {
+    const d0 = (dealsRef.current || deals).find((x) => x.id === id) || null;
+    if (!d0) return null;
+    return evaluarOperacion(d0, usuario, { origen: "Re-evaluación de la operación", motivo: "reevaluacion" });
   };
   // EMPEZAR DE CERO: descarta la simulación y vacía la oferta. Es lo que hoy se consigue cerrando la
   // pestaña del detalle y volviéndola a abrir —«como si el _blank se abriera de nuevo»— salvo que eso
@@ -51326,6 +51481,10 @@ export default function PipelineComercial() {
         ...fin,
       };
     };
+    // La foto que leen los closures del MISMO tick se adelanta al render: «Todo lo disponible» incorpora y simula en
+    // un gesto, `setDeals` no ejecuta `upd` en el acto y el evento de la regla 68 leería el paquete anterior (medido el
+    // 23-09-2026: la v1 salía sin facturas). El ref se vuelve a escribir al renderizar, con lo mismo.
+    dealsRef.current = (dealsRef.current || []).map(upd);
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
   };
@@ -51717,6 +51876,7 @@ export default function PipelineComercial() {
                 onReabrir={reabrirOperacion}
                 onSugerirOferta={aplicarSugerencia}
                 onSimular={simularOferta}
+                onEvaluar={reevaluarOperacion}
                 onLimpiarSimulacion={limpiarSimulacion}
                 onPublicar={publicarOferta}
                 onCerrarOferta={cerrarOferta}

@@ -168,7 +168,7 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-12 · La bitácora no anuncia un recálculo que no ocurrió
 - **Como** Ejecutivo comercial, **quiero** que «Recalculando N oportunidad(es)…» y «Recálculo aplicado» aparezcan sólo si la oferta se re-simuló, **para** que la bitácora sea evidencia y no promesa.
-- **Estado**: por implementar (T2) → **decidido: se retira el anuncio** (D1 cerrada en B el 22-09-2026, ADR-0013: la única evaluación es el evento explícito).
+- **Estado**: **implementada el 23-09-2026** (regla 68, caso 168, `regla_68.test.mjs`; T2): el anuncio se retiró —la bitácora dice «Facturas nuevas para N oportunidad(es) … al pool disponible» y «Facturas agregadas al pool», sin marca de recálculo ni banner—; CA-2 lo fija el caso 168 (el evento deja versión y auditoría) y CA-3 el gate (la condición del banner no existe).
 - **Reglas**: 14 · **Cláusulas**: M-12 · **Gaps**: G-09.
 - **Criterios de aceptación**:
   - CA-1 · Dado una oportunidad simulada · Cuando llegan facturas nuevas · Entonces la bitácora dice «Facturas agregadas al pool» y no «Recálculo aplicado»; la oferta y su versión no cambian.
@@ -184,7 +184,7 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-13 · Simular o re-evaluar es UN evento: cinco motores, cinco versiones con el mismo número
 - **Como** sistema, **quiero** que «Simular la oferta» y «Re-evaluar» sean el mismo evento, que corra otorgamiento, verificación, líneas, giro y pricing en paralelo y que cada motor emita su versión con el mismo número, **para** que «la versión N» signifique lo mismo en los cinco y lo que el ejecutivo muestra al cliente no dependa del render.
-- **Estado**: por implementar (ADR-0013). D1 cerrada del todo: el 22-09-2026, el gesto explícito es UN evento; el 23-09-2026, «el cliente simula» es una forma de hablar del modelo —simular es la acción del ejecutivo al re-evaluar la oferta y no hay simulación del cliente en ningún canal—.
+- **Estado**: **implementada el 23-09-2026** (ADR-0013, regla 68, caso 168, `regla_68.test.mjs`). D1 cerrada del todo: el 22-09-2026, el gesto explícito es UN evento; el 23-09-2026, «el cliente simula» es una forma de hablar del modelo —simular es la acción del ejecutivo al re-evaluar la oferta y no hay simulación del cliente en ningún canal—.
 - **Reglas**: 13, 14 · **Cláusulas**: M-13, M-24, M-26 · **Gaps**: G-10.
 - **Criterios de aceptación**:
   - CA-1 · Dado una oferta armada sin simular · Cuando aprieto «Simular la oferta» · Entonces existe la versión v1 en los cinco motores —otorgamiento, verificación, líneas, giro y pricing— congelada sobre esas facturas, y no hay v1 retroactiva (caso 124 es el molde).
@@ -192,7 +192,7 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
   - CA-3 · Dado que un motor no completa · Cuando termina el evento · Entonces no existe la versión N de la operación: una evaluación que no completa los cinco no es una versión (dirección que bloquea).
   - CA-4 · Dado la v1 emitida · Cuando cierro y reabro el detalle · Entonces el titular, la mesa de verificación y las compuertas de línea leen la versión, no un recálculo del render (`lineaDeVersion`).
   - CA-5 · Dado una oferta sin simular · Cuando abro el detalle · Entonces no hay versión y las compuertas dicen «Por evaluar».
-- **Notas**: ADR-0013: «Simular y re-evaluar son el mismo evento […] El evento corre los cinco motores […] de forma asíncrona y en paralelo […] Cada motor emite una versión por evento, y el número de versiones es el mismo en los cinco […] La primera simulación emite la v1; no hay v1 retroactiva». Hoy emiten versión dos escritores y ninguno es la simulación: «Re-evaluación de la simulación» (`reevaluarCliente`, que hace nacer la v1 retroactiva) y el retiro por `noConfirmada` sobre una operación aceptada (`retirarFacturaOferta`; casos 21–23, regla 13). Cambian `simularOferta`, los llamadores de `reevaluarCliente`, `snapVersionCli`, y `spec-otorgamiento.md` §2 y `spec-gestion-excepciones.md` §4.1, que describen los tres gestos. «Simular es la acción del ejecutivo que se ejecuta al Re-evaluar la oferta (y que contempla correr el motor de otorgamiento, verificación de facturas, asignación de líneas, motor de giros y motor de precios)» (23-09-2026): el único actor del evento es el ejecutivo y el gesto es «Re-evaluar operación», el botón del resumen del detalle bajo «La selección cambió»; nada nuevo que construir, ni portal de autoservicio ni intent del Agente IA.
+- **Notas**: ADR-0013: «Simular y re-evaluar son el mismo evento […] El evento corre los cinco motores […] de forma asíncrona y en paralelo […] Cada motor emite una versión por evento, y el número de versiones es el mismo en los cinco […] La primera simulación emite la v1; no hay v1 retroactiva». Hoy emiten versión dos escritores y ninguno es la simulación: «Re-evaluación de la simulación» (`reevaluarCliente`, que hace nacer la v1 retroactiva) y el retiro por `noConfirmada` sobre una operación aceptada (`retirarFacturaOferta`; casos 21–23, regla 13). Cambian `simularOferta`, los llamadores de `reevaluarCliente`, `snapVersionCli`, y `spec-otorgamiento.md` §2 y `spec-gestion-excepciones.md` §4.1, que describen los tres gestos. «Simular es la acción del ejecutivo que se ejecuta al Re-evaluar la oferta (y que contempla correr el motor de otorgamiento, verificación de facturas, asignación de líneas, motor de giros y motor de precios)» (23-09-2026): el único actor del evento es el ejecutivo y el gesto es «Re-evaluar operación», el botón del resumen del detalle bajo «La selección cambió»; nada nuevo que construir, ni portal de autoservicio ni intent del Agente IA. **Implementado el 23-09-2026:** `evaluarOperacion` es el evento (lo disparan `simularOferta`, `reevaluarOperacion` y `reevaluarCliente`); la versión trae `res`, `verificacion`, `linea`, `giro` y `pricing` o no se emite (`versionCompleta`); `contarVersiones` cuenta por motor. CA-1, CA-2 y CA-3 en el caso 168; CA-4 y CA-5 siguen por e2e (CP-035, CP-036).
 
 ### HU-14 · Otorgamiento evalúa por empresa
 - **Como** sistema, **quiero** evaluar las reglas del otorgamiento por cliente y por deudor, no por factura, **para** que una excepción se pida una vez por empresa.
@@ -261,7 +261,7 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-21 · La versión guarda el modo de tasa y las condiciones comerciales
 - **Como** sistema, **quiero** que cada versión congele el modo de tasa con que se simuló (tasa ponderada o última operación) y las condiciones asignadas —descuento, comisiones y anticipo—, **para** poder probar qué se ofreció en la v1 y con qué modelo.
-- **Estado**: por implementar (T1, ADR-0013) → **decidido: implementar**.
+- **Estado**: **implementada el 23-09-2026** (ADR-0013 punto 5, regla 68, caso 168): `pricingDeVersion` guarda el modo de tasa (`tasaModo`: riesgo · ultima · mayor, el que `tasaDelNegocio` le da a la pantalla), la tasa ponderada, la del último negocio, la efectiva, el descuento, la comisión, el anticipo, los gastos y el plazo equivalente; la huella O05 no cambia (caso 168, CP-054 junto al 85). El diff entre versiones de pricing sigue sin pantalla propia (CP-053).
 - **Reglas**: 13, 23 · **Cláusulas**: M-36 · **Gaps**: G-22, G-32.
 - **Criterios de aceptación**:
   - CA-1 · Dado una simulación con tasa ponderada · Cuando se emite la versión · Entonces la versión guarda `modo de tasa = ponderada`, el descuento, las comisiones y el anticipo asignados; una simulada con «última operación» guarda ese modo, y el diff entre versiones reporta el cambio de modo o de condición cuando ocurre.
@@ -552,18 +552,18 @@ Cada una de las 41 cláusulas y de los 36 gaps aparece al menos una vez.
 | Gaps | Historias |
 |---|---|
 | G-01 · G-02 · G-03 · G-04 · G-05 | HU-04 · HU-08 · HU-09 · HU-06 (cerrado) · HU-07 |
-| G-06 · G-07 · G-08 · G-09 · G-10 | HU-03 (implementada: regla 60) · HU-05 (cerrado; la antigüedad en G-31) · HU-11 (cerrado) · HU-12 · HU-13 |
+| G-06 · G-07 · G-08 · G-09 · G-10 | HU-03 (implementada: regla 60) · HU-05 (cerrado; la antigüedad en G-31) · HU-11 (cerrado) · HU-12 (implementada: regla 68) · HU-13 (implementada: regla 68) |
 | G-11 · G-12 · G-13 · G-14 · G-15 | HU-24 (cerrado en M-15), HU-42 (implementada en M-18: reglas 65 y 67) · HU-25 · HU-31, HU-34 (cerrado) · HU-32 (implementada: regla 66) · HU-18 (cerrado) |
 | G-16 · G-17 · G-18 · G-19 · G-20 | HU-16 (cerrado) · HU-26 (cerrado) · HU-27 · HU-35 · HU-37 (implementada: regla 63) |
-| G-21 · G-22 · G-23 · G-24 · G-25 | HU-20 (cerrado) · HU-21 · HU-19 · HU-36 · HU-39 |
+| G-21 · G-22 · G-23 · G-24 · G-25 | HU-20 (cerrado) · HU-21 (implementada: regla 68) · HU-19 · HU-36 · HU-39 |
 | G-26 · G-27 · G-28 · G-29 · G-30 | HU-30 · HU-17 · HU-38 · HU-02 · HU-40 |
-| G-31 · G-32 · G-33 · G-34 · G-35 | HU-05 (implementada: regla 61) · HU-21 · HU-35 · HU-37 · HU-32 (implementada: regla 66) |
+| G-31 · G-32 · G-33 · G-34 · G-35 | HU-05 (implementada: regla 61) · HU-21 (implementada: regla 68) · HU-35 · HU-37 · HU-32 (implementada: regla 66) |
 | G-36 | HU-42 (implementada: regla 67) y HU-33 CA-3 (dirección nueva desde el 23-09-2026) |
 
-**Por estado (42 historias):** 28 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
+**Por estado (42 historias):** 31 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
 HU-29, HU-33 —con su CA-3 vigente hoy · cambia con ADR-0018— y HU-41) y 9 por definición ajustada el 22 y 23-09-2026
-(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34) y 9 implementadas el 23-09-2026 (HU-03, ADR-0014: regla 60, caso 159; HU-05, regla 61, caso 160; HU-25, regla 62, caso 161; HU-37, ADR-0017: regla 63, caso 162; HU-08 y HU-09, ADR-0019: regla 64, casos 163–164; HU-35, ADR-0015: regla 65, caso 165; HU-32, ADR-0016: regla 66, caso 166; HU-42, ADR-0018: regla 67, caso 167)— · 14 por implementar (HU-02, HU-04,
-HU-07, HU-12, HU-13 ADR-0013, HU-17, HU-19, HU-21 ADR-0013, HU-27, HU-30, HU-36, HU-38, HU-39, HU-40) · 0 pendientes de confirmar.
+(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34) y 12 implementadas el 23-09-2026 (HU-03, ADR-0014: regla 60, caso 159; HU-05, regla 61, caso 160; HU-25, regla 62, caso 161; HU-37, ADR-0017: regla 63, caso 162; HU-08 y HU-09, ADR-0019: regla 64, casos 163–164; HU-35, ADR-0015: regla 65, caso 165; HU-32, ADR-0016: regla 66, caso 166; HU-42, ADR-0018: regla 67, caso 167; HU-12, HU-13 y HU-21, ADR-0013: regla 68, caso 168)— · 11 por implementar (HU-02, HU-04,
+HU-07, HU-17, HU-19, HU-27, HU-30, HU-36, HU-38, HU-39, HU-40) · 0 pendientes de confirmar.
 
 **Preguntas abiertas dentro de historias que ya tienen estado:** ninguna desde el 23-09-2026.
 

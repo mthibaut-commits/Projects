@@ -1,6 +1,7 @@
 /* Gate de contrato de la regla 66 (ADR-0016: la excepción que la versión N ya no levanta se marca «ya no aplica desde
    la versión N», no se borra; la marcada no se reactiva), sobre el TEXTO del fuente. La decisión pura y el flujo entero
-   los prueba el caso 166 (`excepcionesQueYaNoAplican`, `reevaluarCliente`, `solicitarAprobacionExc`); lo que la suite no
+   los prueba el caso 166 (`excepcionesQueYaNoAplican`, `reevaluarCliente` —que desde la regla 68 pasa por
+   `evaluarOperacion`—, `solicitarAprobacionExc`); lo que la suite no
    puede ver es que NINGÚN lector del visado —y hay doce, entre motor, tab, mesa, avisos y contadores— trate la marca como
    una decisión, que la mutación no borre nada, y que el tab y la bandeja de tareas muestren el estado nuevo.
 
@@ -15,11 +16,12 @@ export function auditarRegla66(src) {
   const fallos = [];
   const can = canonico(src);
   // 1 · La re-evaluación marca DESPUÉS de emitir la versión, con el número de esa versión.
-  const iR = can.indexOf("function reevaluarCliente(deal, usuario) {");
-  const reev = iR < 0 ? "" : can.slice(iR, iR + 2500);
+  // Desde la regla 68 (ADR-0013) la versión la emite el EVENTO, `evaluarOperacion`, y ahí mismo se marca.
+  const iR = can.indexOf("function evaluarOperacion(deal, usuario, opts) {");
+  const reev = iR < 0 ? "" : can.slice(iR, iR + 3200);
   const iPush = reev.indexOf("repoSimVersions.push(deal.id, nv);");
   const iMarca = reev.indexOf("const yaNoAplican = marcarExcepcionesQueYaNoAplican(deal, nv.v);");
-  if (iPush < 0 || iMarca < 0 || iMarca < iPush) fallos.push("`reevaluarCliente` no marca lo que la versión nueva ya no levanta (después de emitirla y con su número)");
+  if (iPush < 0 || iMarca < 0 || iMarca < iPush) fallos.push("`evaluarOperacion` no marca lo que la versión nueva ya no levanta (después de emitirla y con su número)");
   // 2 · La decisión es pura y SÓLO escribe la marca: nunca una decisión de apoderado.
   const iD = can.indexOf("function excepcionesQueYaNoAplican(items, sol, st, det, version, fecha) {");
   const dec = iD < 0 ? "" : can.slice(iD, can.indexOf("function marcarExcepcionesQueYaNoAplican(", iD));
