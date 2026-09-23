@@ -445,3 +445,47 @@ re-simula y vuelve a publicar).
 filas de gate `dtesync.test.mjs` y `regla_<slug>` 50), `Levantamiento` A1, `spec-inbound-facturas.md` §2/§6/§12,
 `spec-proceso-curse.md` §5 (llegada por eventos, M-01), `GeneradorDatos/README.md` (base y sección nueva),
 `arquitectura.md`, HU-01 CA-5 y CP-144, cifras (170/170; 99 reglas; 61 archivos de gate, 50 por regla; ~46 MB), tablero.
+
+## 13 · ADR-0021: sobre la oferta cerrada, publicada o firmada la NC, el reclamo o la cesión a otro inhabilitan el documento (regla 71, caso 171)
+
+**Qué decidió el usuario** (la #7 que ADR-0020 dejó abierta): «se debe dejar la oferta como no cursable, el documento
+debe quedar inhabilitado, el ejecutivo debería retirar la factura, re-evaluar, volver a firmar. Cuando una factura está
+reclamada, anulada y/o cedida a otro, quiere decir que el deudor no va a pagar esa factura (no la reconoce; por lo que es
+como que esté no verificada, al margen que la verificación telefónica haya dado por verificada), si está cedida a un
+tercero, al momento de intentar cederla el SII va a rechazar la cesión de esa factura».
+
+**Qué cambió.** Se reutilizó entero el ciclo de ADR-0018 en vez de inventar un segundo mecanismo:
+- `aplicarActualizacionDTE`: sobre la oferta cerrada, publicada o firmada la NC, el reclamo o la cesión (`bloquea` incluye
+  `cedida`) parchan el documento Y lo marcan `inhabilitada` (motivo, glosa, secuencia, fecha), con traza en rojo; `cambio`
+  devuelve el documento para que quien llama escriba el veto. El acuse no inhabilita. `aplicarEventosADeal` devuelve
+  `inhabilitadas`.
+- El tick (`aplicarActualizacionesDTE`) decide las inhabilitaciones sobre `dealsRef.current` FUERA del updater y escribe el
+  veto por el único escritor, `marcarNoVerificada(id, facs, { origen: "sii", motivoLbl })`; el parche del estado sigue por
+  su updater, idempotente.
+- `marcarNoVerificada` admite el origen «sii»: `por` = `ACTOR_SII` («SII · DTESync»), la entrada anota `origen` y `cambio`,
+  la bitácora de otorgamiento dice que el SII inhabilitó; el aviso sigue siendo `avisarNoVerificadas` (ancla de la regla
+  67), que con documentos marcados usa el asunto «Documentos inhabilitados por el SII · OP» y explica por qué.
+- `vetoDe` (la entrada del veto) al lado de `noConfirmada`; `estadoCandidata` etiqueta «Inhabilitada por el SII» con la
+  instrucción; `verifResumenDeal` cuenta TODO documento vetado como `tel`/`pend` antes de mirar la llamada (la llamada en
+  verde no destraba) y devuelve `sii`; `issueVerificacion` nombra aparte lo del SII y titula según haya de una o de las dos
+  clases; VER-01, la tarjeta del tubo y `motivoExcl` de la fila lo dicen; `onStorageVeto` relee el veto en el detalle abierto.
+- Caso 170 (d) pasó a fijar la inhabilitación; caso 171 nuevo; `regla_71.test.mjs` (17 tests) y `regla_70` re-anclado.
+  `CASOS_ESPERADOS` 170 → 171 (decisión). Gates 552/552 (62 archivos, 51 por regla).
+
+**Lo que costó / sorpresas.**
+- **Las anclas de tres gates vecinos.** `regla_60` planta su sonda sobre `const motivoExcl = (f) => {const c = cesionDeFactura(`
+  (la línea nueva va DESPUÉS de la cesión); `regla_68` exige que `onStorage` empiece con su guarda original (el veto tiene
+  su propio oyente, `onStorageVeto`, declarado antes); `regla_67` exige `repoNoConfirmadas.set(id, nc); const deudor = …`
+  contiguos y la llamada `avisarNoVerificadas(d0, fs, motivoLbl)` tal cual (el origen viaja en `gestion` y en el documento
+  marcado, no en un parámetro nuevo).
+- **El heredoc de la suite dentro de un comando en segundo plano no dejó rastro**: el script de Python no corrió y la suite
+  arrancó sobre el archivo viejo. Se mató la corrida (`pkill -f run_tests.mjs` también mata al shell que lo escribe: exit
+  144) y se repitió en primer plano. La edición de la suite va en su propio comando, y después se lanza.
+- **`verifResumenDeal` dejaba cursar un documento vetado con la llamada en verde**: la regla 67 decía «cuentan también en
+  pend (no tienen llamada registrada)», o sea que dependía de que la llamada no existiera. Ahora el veto cuenta antes de
+  mirar la llamada, para las dos clases.
+
+**Documentos:** ADR-0021 (+ índice), regla 71 en `verificacion.md` (+ lista de la cabecera), regla 70 reescrita en la
+viñeta que decía «sólo avisan», filas 70 y 71 de `invariantes.md` (+ `regla_<slug>` 51), `spec-inbound` §6 y §12 (#7
+decidida), `spec-proceso-curse` §5 y M-18, `Levantamiento` A1, HU-01 (CA-5, reglas y cláusulas), CP-144 y CP-145, cifras
+(171/171; 100 reglas; 62 archivos de gate; ~46 MB), tablero.

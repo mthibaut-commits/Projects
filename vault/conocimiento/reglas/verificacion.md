@@ -10,7 +10,7 @@ timestamp: 2026-09-17T15:29:14Z
 
 > Reglas de dominio de NEX, **verbatim** desde el `CLAUDE.md` anterior al 17-09-2026, agrupadas por tema. Se citan por su número (`regla 6`) y **no se renumeran**: el fuente y otros documentos las referencian así. Índice de todas, con qué caso de la suite verifica cada una: [`invariantes.md`](../invariantes.md).
 >
-> Reglas en este archivo: **6** · **9-ter** · **53** · **57** · **59** · **67**.
+> Reglas en este archivo: **6** · **9-ter** · **53** · **57** · **59** · **67** · **71**.
 
 6. **Verificación de facturas = rutina AISLADA, y la decisión es POR DEUDOR** (`Specs_Procesos/Verificacion/spec-verificacion-facturas.md`). El contacto con el deudor busca dejar por escrito o grabado que pagará; toma **3–4 horas y retrasa el giro**, y si el deudor no confirma **Security retira las facturas no confirmadas**. Por eso el ejecutivo tiene que saber ANTES de comprometer un plazo. `verifDecision(par, facturas)` es la función pura; `verifEvaluar` la adapta a la UI, `verifDeudorDeal` la consulta y `verifFactura` sólo delega — **la verificación de una factura ES la de su deudor**, porque una llamada cubre todas sus facturas y evaluarla por documento daba veredictos distintos entre facturas del mismo deudor. Detalle:
    - **`verifPar(rutCliente, deudor, tipo)`** memoiza en `_VERIF_PAR` el estado del PAR (protocolo propio, % pagado 3M, recurrencia, mora, reclamos, historial). Semilla = el par, **nunca el folio**.
@@ -185,3 +185,45 @@ timestamp: 2026-09-17T15:29:14Z
       `regla_67.test.mjs` (el único escritor que no retira ni versiona, los tres caminos y el diálogo, el retiro sin
       excepción, el issue en cabecera, tab y VER-01, el aviso, los rótulos, la mesa sin duplicar: once sondas). La
       pantalla sigue por e2e (CP-138 a CP-142).
+
+71. **LA NC, EL RECLAMO O LA CESIÓN A OTRO SOBRE UN DOCUMENTO DE UNA OFERTA CERRADA, PUBLICADA O FIRMADA LO INHABILITAN Y
+    DEJAN LA OPERACIÓN NO CURSABLE: EL EJECUTIVO RETIRA, RE-EVALÚA Y VUELVE A FIRMAR** (23-09-2026, ADR-0021; el usuario:
+      «se debe dejar la oferta como no cursable, el documento debe quedar inhabilitado, el ejecutivo debería retirar la
+      factura, re-evaluar, volver a firmar. Cuando una factura está reclamada, anulada y/o cedida a otro, quiere decir que
+      el deudor no va a pagar esa factura (no la reconoce; por lo que es como que esté no verificada, al margen que la
+      verificación telefónica haya dado por verificada), si está cedida a un tercero, al momento de intentar cederla el
+      SII va a rechazar la cesión de esa factura»). Cierra la decisión #7 que ADR-0020 dejó abierta: hasta entonces la
+      actualización sobre la oferta cerrada sólo avisaba.
+    - **El documento queda con su estado nuevo y marcado.** `aplicarActualizacionDTE` (regla 70) lo parcha también en la
+      oferta cerrada, publicada o firmada, y cuando lo que llega es la NC, el reclamo o la cesión a otro le pone
+      `inhabilitada` (motivo, glosa, secuencia, fecha) y deja la traza en rojo: «queda inhabilitado y la operación no se
+      cursa hasta que el ejecutivo lo retire, re-evalúe y vuelva a publicar para una nueva firma». El acuse se anota y no
+      inhabilita. La fila de la oferta lo rotula «Inhabilitada por el SII · nota de crédito (folio N)».
+    - **El veto es el de la regla 67, escrito por el SII.** El tick del inbound decide las inhabilitaciones sobre la foto
+      vigente del tubo, FUERA de todo updater (regla 22), y las escribe por el ÚNICO escritor del veto,
+      `marcarNoVerificada`, con origen «sii»: `por` es `SII · DTESync`, la entrada anota `origen` y `cambio`, la bitácora
+      de otorgamiento dice «SII · DTESync inhabilitó N documento(s)…» y el aviso al ejecutivo (`avisarNoVerificadas`) sale
+      con el asunto «Documentos inhabilitados por el SII · OP» y dice por qué: el deudor no va a pagar un documento
+      reclamado, anulado o cedido a otro, tenga o no la verificación telefónica en verde. Un veto por motivo y operación;
+      la re-entrega no lo repite (`secuenciaDTE`).
+    - **Cuenta como pendiente aunque la llamada esté en verde.** `verifResumenDeal` cuenta todo documento vetado —por la
+      llamada o por el SII— como `tel` y `pend` ANTES de mirar la llamada, así que VER-01 (regla 41) sigue mandando y lo
+      dice: «N inhabilitada(s) por el SII: reclamo, nota de crédito o cesión a otro». `issueVerificacion` lo nombra aparte
+      con su motivo y titula «Documentos inhabilitados por el SII: no se puede cursar» (o «Facturas no verificadas e
+      inhabilitadas por el SII…» si hay de las dos); la tarjeta del tubo suma «· N por el SII»; `estadoCandidata` etiqueta
+      «Inhabilitada por el SII» con la instrucción; la mesa lo lista como no verificada (regla 67).
+    - **Retira el EJECUTIVO, por el camino de la regla 67**: «Editar la oferta» (reabre y revoca la firma, reglas 1 y 33),
+      retirar el documento, volver a simular y publicar de nuevo; el cliente firma la nueva operación. El veto impide
+      volver a agregarlo.
+    - **La cesión a otro es de la misma familia** (`bloquea` incluye `cedida`): hoy la trae el join con el A2 al incorporar
+      (regla 60) y la pérdida de la oportunidad por cesión sigue en `evaluarPerdidas`; cuando exista el evento del A2
+      sobre un documento ya en la oferta cerrada, entra por este mismo camino.
+    - **El detalle abierto ve el veto que escribió el tubo**: `onStorageVeto` relee `repoNoConfirmadas` por el evento
+      `storage`, como las versiones (regla 68).
+    - Caso **171** (la decisión pura en las dos direcciones y el lote; el veto del SII plantado cuenta como pendiente con
+      la llamada en verde; el issue, VER-01 y la candidata lo dicen con su motivo; mezclado con el veto de la llamada, y
+      sólo con la llamada; el aviso con su asunto, reusado, y el de la llamada intacto) y `regla_71.test.mjs` (la decisión
+      marca y devuelve el documento; el tick escribe por el único escritor y fuera del updater; el escritor firma como el
+      SII; el resumen cuenta antes de la llamada; el issue, la candidata, el aviso, VER-01, la tarjeta, la fila y el
+      oyente; dieciséis sondas). El caso 170 (d) pasó a fijar la inhabilitación. La pantalla queda por e2e cuando el
+      stream sea determinista (CP-145).

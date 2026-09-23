@@ -3509,6 +3509,13 @@ function verifResumenDeal(deal, estado) {
     ok = 0,
     pend = 0;
   fs.forEach((f) => {
+    // REGLA 71 · El documento vetado —por la llamada (regla 67) o por el SII (ADR-0021)— está PENDIENTE aunque el modelo o
+    // una llamada anterior lo dieran por verificado: el deudor no lo va a pagar, y una llamada más no lo destraba.
+    if (noConfirmada(deal, f, estado && estado.vetadas)) {
+      tel++;
+      pend++;
+      return;
+    }
     const vf = verifFactura(f, deal, estado);
     if (vf.est === "ok") ok++;
     else {
@@ -3522,8 +3529,11 @@ function verifResumenDeal(deal, estado) {
   // el aviso digan qué folios y de qué deudor. El veto entra por `estado.vetadas` para que la función siga siendo pura.
   const noVerificadas = fs
     .filter((f) => noConfirmada(deal, f, estado && estado.vetadas))
-    .map((f) => ({ id: f.id, folio: f.folio || f.id, deudor: f.deudor || "" }));
-  return { total: fs.length, tel, ok, pend, noVerif: noVerificadas.length, noVerificadas };
+    .map((f) => {
+      const v = vetoDe(deal, f, estado && estado.vetadas) || {};
+      return { id: f.id, folio: f.folio || f.id, deudor: f.deudor || "", origen: v.origen === "sii" ? "sii" : "llamada", motivo: v.motivo || "" };
+    });
+  return { total: fs.length, tel, ok, pend, noVerif: noVerificadas.length, noVerificadas, sii: noVerificadas.filter((x) => x.origen === "sii").length };
 }
 // El ISSUE de la verificación fallida, en palabras (regla 67): null si ninguna factura marcada sigue en la oferta. Puro
 // y de nivel módulo porque lo consultan la cabecera del detalle, el tab de Verificación, el control VER-01 y el aviso al
@@ -3531,19 +3541,43 @@ function verifResumenDeal(deal, estado) {
 function issueVerificacion(deal, estado) {
   const r = verifResumenDeal(deal, estado);
   if (!r.noVerif) return null;
+  const llamada = r.noVerificadas.filter((f) => f.origen !== "sii");
+  const sii = r.noVerificadas.filter((f) => f.origen === "sii");
   const porDeudor = {};
   r.noVerificadas.forEach((f) => {
     const k = f.deudor || "—";
     (porDeudor[k] = porDeudor[k] || []).push(f.folio);
   });
   const deudores = Object.keys(porDeudor);
-  const detalle = deudores.map((d) => `${d} (folio${porDeudor[d].length > 1 ? "s" : ""} ${porDeudor[d].join(", ")})`).join("; ");
+  const detalleDe = (lista) => {
+    const m = {};
+    lista.forEach((f) => {
+      const k = f.deudor || "—";
+      (m[k] = m[k] || []).push(f.folio);
+    });
+    return Object.keys(m)
+      .map((d) => `${d} (folio${m[d].length > 1 ? "s" : ""} ${m[d].join(", ")})`)
+      .join("; ");
+  };
+  // REGLA 71 (ADR-0021) · Lo que el SII inhabilitó se nombra aparte y con su motivo: no es una llamada que faltó, es un
+  // documento que el deudor no va a pagar. La salida es la misma que la de la verificación fallida.
+  const partes = [];
+  if (llamada.length) partes.push(`${llamada.length} factura(s) no pudieron ser verificadas con el deudor: ${detalleDe(llamada)}`);
+  if (sii.length)
+    partes.push(
+      `${sii.length} documento(s) inhabilitado(s) por el SII: ${sii.map((f) => `#${f.folio} (${f.deudor || "—"}${f.motivo ? " · " + f.motivo : ""})`).join(", ")}`,
+    );
   return {
     n: r.noVerif,
+    sii: sii.length,
     deudores,
     folios: r.noVerificadas.map((f) => f.folio),
-    titulo: "Facturas no verificadas: no se puede cursar",
-    texto: `${r.noVerif} factura(s) no pudieron ser verificadas con el deudor: ${detalle}. Mientras sigan en la oferta la operación no se cursa: retíralas, vuelve a simular y publica de nuevo la oferta para que el cliente firme la nueva operación.`,
+    titulo: !sii.length
+      ? "Facturas no verificadas: no se puede cursar"
+      : !llamada.length
+        ? "Documentos inhabilitados por el SII: no se puede cursar"
+        : "Facturas no verificadas e inhabilitadas por el SII: no se puede cursar",
+    texto: `${partes.join(". ")}. Mientras sigan en la oferta la operación no se cursa: retíralas, vuelve a simular y publica de nuevo la oferta para que el cliente firme la nueva operación.`,
   };
 }
 // ── MESA DE VERIFICACIÓN ────────────────────────────────────────────────────────────────────────
@@ -4301,9 +4335,13 @@ const glosaCambioDTE = (ev) =>
     ? `una nota de crédito${ev.estado && ev.estado.folioNotaCredito ? ` (folio ${ev.estado.folioNotaCredito})` : ""}`
     : ev.cambio === "reclamo"
       ? "el reclamo del receptor"
-      : ev.cambio === "acuse"
-        ? "el acuse de recibo"
-        : "un cambio de estado";
+      : ev.cambio === "cesion"
+        ? "la cesión a otro factoring"
+        : ev.cambio === "acuse"
+          ? "el acuse de recibo"
+          : "un cambio de estado";
+// Quien firma el veto cuando lo escribe el servicio y no una persona (regla 71).
+const ACTOR_SII = "SII · DTESync";
 // Aplica una actualización a un documento que ya vive en un pool: devuelve el MISMO objeto si el evento no es más
 // nuevo que lo que el documento ya sabe (una re-entrega no se aplica dos veces), o una copia con el estado nuevo.
 function parcharDocumentoDTE(f, ev) {
@@ -4323,17 +4361,22 @@ const aplicarEventosAEvento = (e, porDoc) => {
   const ev = f && porDoc.get(f.id);
   return ev ? aplicarActualizacionAEvento(e, ev) : e;
 };
-// QUÉ HACE UNA ACTUALIZACIÓN CON UNA OPORTUNIDAD (regla 70). El documento se parcha donde viva: en los disponibles
-// siempre; en la oferta mientras el paquete sea del ejecutivo. Si la oferta ya está cerrada o publicada y llega una NC
-// o un reclamo, el documento NO se toca —lo que se cursa no cambia solo (regla 14)— y la bitácora deja el aviso: qué
-// hacer con eso es una decisión pendiente del negocio (ADR-0020, Consecuencias). El acuse se anota siempre, sin traza.
-// Pura y de nivel módulo: la suite la prueba en las dos direcciones (caso 170).
+// QUÉ HACE UNA ACTUALIZACIÓN CON UNA OPORTUNIDAD (regla 70, regla 71). El documento se parcha donde viva: en los
+// disponibles siempre, y en la oferta también. Mientras el paquete es del ejecutivo, con eso basta: la fila lo muestra
+// bloqueado y él decide. Si la oferta ya está cerrada, publicada o firmada, la NC, el reclamo o la cesión a otro además
+// lo INHABILITAN (ADR-0021; el usuario, 23-09-2026: «se debe dejar la oferta como no cursable, el documento debe quedar
+// inhabilitado, el ejecutivo debería retirar la factura, re-evaluar, volver a firmar»): el documento queda con su estado
+// nuevo y marcado `inhabilitada`, la bitácora lo dice con `exito: false`, y quien llama escribe el veto de la regla 67
+// (`marcarNoVerificada`, origen «sii») para que la operación no se curse hasta que el ejecutivo lo retire, re-evalúe y
+// vuelva a publicar para una nueva firma. Un documento que el deudor reclamó, anuló o cedió a otro no lo va a pagar,
+// tenga o no la verificación telefónica en verde; cedido a otro, el SII rechazará nuestra cesión. El acuse se anota
+// siempre, sin traza ni veto. Pura y de nivel módulo: la suite la prueba en las dos direcciones (casos 170 y 171).
 function aplicarActualizacionDTE(deal, ev) {
   if (!deal || !ev || !ev.docId) return { deal, cambio: null };
   const enOferta = (deal.facturasOp || []).find((f) => f && f.id === ev.docId) || null;
   const enDisp = (deal.facturasDisponibles || []).find((f) => f && f.id === ev.docId) || null;
   if (!enOferta && !enDisp) return { deal, cambio: null };
-  const bloquea = !!(ev.estado && (ev.estado.notaCredito || ev.estado.reclamada));
+  const bloquea = !!(ev.estado && (ev.estado.notaCredito || ev.estado.reclamada || ev.estado.cedida));
   const paqueteCerrado = ofertaCerradaVigente(deal) || ofertaPublicada(deal) || ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage);
   let d = deal;
   let cambio = null;
@@ -4345,28 +4388,27 @@ function aplicarActualizacionDTE(deal, ev) {
     }
   }
   if (enOferta) {
-    if (bloquea && paqueteCerrado) {
-      if ((enOferta.avisoDTE || 0) < ev.secuencia) {
+    const nf = parcharDocumentoDTE(enOferta, ev);
+    if (nf !== enOferta) {
+      if (bloquea && paqueteCerrado) {
+        const marcado = { ...nf, inhabilitada: { motivo: ev.cambio, glosa: glosaCambioDTE(ev), secuencia: ev.secuencia, fecha: ev.fchNotificacion || null } };
         d = {
           ...d,
-          facturasOp: d.facturasOp.map((f) => (f === enOferta ? { ...f, avisoDTE: ev.secuencia } : f)),
+          facturasOp: d.facturasOp.map((f) => (f === enOferta ? marcado : f)),
           historialContacto: traza(
             d,
-            `⚠ El SII notificó ${glosaCambioDTE(ev)} sobre el documento #${ev.folio}, que está en la oferta ${ofertaPublicada(deal) ? "publicada" : "cerrada"}: el paquete no se toca solo; revisar la operación`,
+            `⚠ El SII notificó ${glosaCambioDTE(ev)} sobre el documento #${ev.folio}, que está en la oferta ${ofertaPublicada(deal) ? "publicada" : "cerrada"}: queda inhabilitado y la operación no se cursa hasta que el ejecutivo lo retire, re-evalúe y vuelva a publicar para una nueva firma`,
             false,
           ),
         };
-        cambio = { donde: "aviso", folio: ev.folio, cambio: ev.cambio };
-      }
-    } else {
-      const nf = parcharDocumentoDTE(enOferta, ev);
-      if (nf !== enOferta) {
+        cambio = { donde: "inhabilitada", folio: ev.folio, cambio: ev.cambio, factura: marcado };
+      } else {
         d = { ...d, facturasOp: d.facturasOp.map((f) => (f === enOferta ? nf : f)) };
         cambio = { donde: "oferta", folio: ev.folio, cambio: ev.cambio };
       }
     }
   }
-  if (cambio && bloquea && cambio.donde !== "aviso")
+  if (cambio && bloquea && cambio.donde !== "inhabilitada")
     d = {
       ...d,
       historialContacto: traza(
@@ -4376,20 +4418,21 @@ function aplicarActualizacionDTE(deal, ev) {
     };
   return { deal: d, cambio };
 }
-// Todas las actualizaciones de un lote sobre una oportunidad; cuenta cuántas la tocaron y cuántas quedaron en aviso.
+// Todas las actualizaciones de un lote sobre una oportunidad: cuántas la tocaron y qué documentos quedaron inhabilitados
+// (regla 71), con su evento, para que quien llama escriba el veto fuera de todo updater.
 function aplicarEventosADeal(deal, evs) {
   let d = deal;
   let n = 0;
-  let avisos = 0;
+  const inhabilitadas = [];
   for (const ev of evs) {
     const r = aplicarActualizacionDTE(d, ev);
     if (r.cambio) {
       d = r.deal;
-      if (r.cambio.donde === "aviso") avisos++;
+      if (r.cambio.donde === "inhabilitada") inhabilitadas.push({ ev, factura: r.cambio.factura });
       else n++;
     }
   }
-  return { deal: d, n, avisos };
+  return { deal: d, n, inhabilitadas };
 }
 function streamDesdeDTE(dte) {
   const out = [];
@@ -6537,16 +6580,30 @@ function candidatasDe(deal) {
 // Las facturas que el deudor no confirmó quedan vetadas para la operación. El veto es el resultado de
 // una llamada —evidencia con actor y hora—, así que entra por parámetro: es lo que hacía que
 // `estadoCandidata`, que decide si una factura se puede incorporar, pareciera pura sin serlo.
-function noConfirmada(deal, f, vetadas) {
+// La entrada del veto, o null: lleva quién lo escribió (`por`), cuándo, el motivo y —si lo escribió el SII, regla 71— el
+// origen «sii» y el cambio del documento que lo causó.
+function vetoDe(deal, f, vetadas) {
   const todas = vetadas || (typeof NO_CONFIRMADAS !== "undefined" ? NO_CONFIRMADAS : {}) || {};
   const m = todas[(deal && deal.id) || ""] || null;
-  return !!(m && f && m[f.id]);
+  return (m && f && m[f.id]) || null;
+}
+function noConfirmada(deal, f, vetadas) {
+  return !!vetoDe(deal, f, vetadas);
 }
 function estadoCandidata(f, deal, estado) {
   const monto = f.monto || 0;
   const R = (clave, label, detalle) => ({ clave, bloqueada: true, agregable: false, label, detalle, tono: "red", montoNeto: monto, ncMonto: 0 });
-  // El veto de la verificación manda sobre cualquier otro estado de la candidata.
-  if (noConfirmada(deal, f, estado && estado.vetadas)) return R("noConfirmada", "El deudor no la confirmó");
+  // El veto de la verificación manda sobre cualquier otro estado de la candidata. Si lo escribió el SII (regla 71), la
+  // etiqueta dice por qué el documento quedó inhabilitado.
+  const veto = vetoDe(deal, f, estado && estado.vetadas);
+  if (veto)
+    return veto.origen === "sii"
+      ? R(
+          "inhabilitada",
+          "Inhabilitada por el SII",
+          `${veto.motivo || "El SII reportó el documento reclamado, anulado o cedido a otro"}. El deudor no lo va a pagar: no se cursa; hay que retirarlo, re-evaluar y volver a publicar.`,
+        )
+      : R("noConfirmada", "El deudor no la confirmó");
   if (f.notaCredito === true)
     return R(
       "notaCredito",
@@ -8200,7 +8257,10 @@ function DealCard({ deal, onOpen, onDragStart }) {
                   style={{ backgroundColor: "#fef2f2", color: "#B91C1C" }}
                   title={iss.texto}
                 >
-                  <AlertTriangle size={10} /> <span>No se puede cursar · {iss.n} no verificada(s)</span>
+                  <AlertTriangle size={10} />{" "}
+                  <span>
+                    No se puede cursar · {iss.n} no verificada(s){iss.sii ? ` · ${iss.sii} por el SII` : ""}
+                  </span>
                 </div>
               )}
             </>
@@ -14146,6 +14206,8 @@ function DealDrawer({
                 const motivoExcl = (f) => {
                   const c = cesionDeFactura(deal.rutEmisor, f && f.folio);
                   if (c && !c.nuestra) return `Cedida a ${c.factoring}${c.parcial ? ` (parcial, ${fmtMM(c.monto)})` : ""}`;
+                  // REGLA 71 · Lo que el SII inhabilitó sobre la oferta cerrada o firmada se dice con su motivo.
+                  if (f && f.inhabilitada) return `Inhabilitada por el SII · ${f.inhabilitada.glosa}`;
                   return f.reclamada ? "Reclamada" : f.notaCredito ? "Nota de crédito" : null;
                 };
                 const facturasMarcadas = facturasOp.map((f) => ({ ...f, excl: motivoExcl(f) }));
@@ -24533,7 +24595,7 @@ function controlesIntegracion(deal, estado) {
     faltas.push({
       codigo: "VER-01",
       titulo: "Verificación incompleta",
-      detalle: `${pendVerif} factura(s) esperan la verificación telefónica con el deudor${issV ? ` · ${issV.n} marcada(s) no verificada(s): el ejecutivo tiene que retirarlas, re-simular y volver a publicar` : ""}`,
+      detalle: `${pendVerif} factura(s) esperan la verificación telefónica con el deudor${issV ? ` · ${issV.n} marcada(s) no verificada(s): el ejecutivo tiene que retirarlas, re-simular y volver a publicar${issV.sii ? ` (${issV.sii} inhabilitada(s) por el SII: reclamo, nota de crédito o cesión a otro, regla 71)` : ""}` : ""}`,
     });
   }
   // LA LÍNEA, FACTURA POR FACTURA. El cupo se asigna al armar la oferta y lo que no cabe sale marcado
@@ -26209,16 +26271,21 @@ function avisarNoVerificadas(deal, facs, motivo) {
   const fs = (facs || []).filter(Boolean);
   if (!deal || !fs.length) return null;
   const ejec = deal.exec && USERS[deal.exec] ? deal.exec : null;
-  const asunto = `Verificación fallida · ${deal.id}`;
+  // REGLA 71 (ADR-0021) · Cuando quien inhabilita es el SII, el hilo y el texto lo dicen: no es una llamada que faltó, es
+  // que el deudor no va a pagar ese documento (reclamado, anulado o cedido a otro). La salida es la misma.
+  const sii = fs.filter((f) => f && f.inhabilitada);
+  const asunto = sii.length ? `Documentos inhabilitados por el SII · ${deal.id}` : `Verificación fallida · ${deal.id}`;
   const prev = hilosDeDeal(deal.id).find((h) => h.asunto === asunto);
   const h = prev || hiloNuevo({ tipo: "requerimiento", dealId: deal.id, cliente: deal.cliente, asunto, participantes: [ejec], creadoPor: CODE_SISTEMA });
   if (ejec && !h.participantes.includes(ejec)) h.participantes.push(ejec);
   const neg = deal.negocioNum ? `N° ${deal.negocioNum}` : deal.id;
   const deudores = Array.from(new Set(fs.map((f) => f.deudor || "—")));
   const folios = fs.map((f) => `#${f.folio || f.id}`).join(", ");
-  const texto =
-    `La operación ${neg} (${deal.id}) de ${deal.cliente} no se podrá cursar: ${fs.length} factura(s) del deudor ${deudores.join(" y ")} no pudieron ser verificadas (${folios}${motivo ? ` · ${motivo}` : ""}). ` +
-    "Mientras sigan en la oferta la operación no se cursa: abre la operación, retira las facturas de ese deudor, vuelve a simular y publica de nuevo la oferta para que el cliente firme la nueva operación.";
+  const texto = sii.length
+    ? `La operación ${neg} (${deal.id}) de ${deal.cliente} no se podrá cursar: el SII inhabilitó ${sii.length} documento(s) del deudor ${deudores.join(" y ")} (${sii.map((f) => `#${f.folio || f.id} · ${f.inhabilitada.glosa}`).join(", ")}). ` +
+      "El deudor no va a pagar un documento reclamado, anulado o cedido a otro, tenga o no la verificación telefónica en verde. Mientras sigan en la oferta la operación no se cursa: abre la operación, retira esos documentos, vuelve a simular y publica de nuevo la oferta para que el cliente firme la nueva operación."
+    : `La operación ${neg} (${deal.id}) de ${deal.cliente} no se podrá cursar: ${fs.length} factura(s) del deudor ${deudores.join(" y ")} no pudieron ser verificadas (${folios}${motivo ? ` · ${motivo}` : ""}). ` +
+      "Mientras sigan en la oferta la operación no se cursa: abre la operación, retira las facturas de ese deudor, vuelve a simular y publica de nuevo la oferta para que el cliente firme la nueva operación.";
   hiloEnviar(h, CODE_SISTEMA, texto, null);
   return h;
 }
@@ -47591,7 +47658,7 @@ export default function PipelineComercial() {
   }, [streaming, cfgT.cronMs]);
   const [recibidas, setRecibidas] = useState(0);
   const [actualizadas, setActualizadas] = useState(0); // notificaciones posteriores a la creación aplicadas (regla 70)
-  const actDTERef = useRef({ total: 0, acuses: 0, reclamos: 0, notasCredito: 0, otros: 0, enOportunidades: 0, avisos: 0 });
+  const actDTERef = useRef({ total: 0, acuses: 0, reclamos: 0, notasCredito: 0, otros: 0, enOportunidades: 0, inhabilitadas: 0 });
   const [acumulado, setAcumulado] = useState([]); // facturas calificadas esperando la corrida
   const [corridas, setCorridas] = useState(0);
   const [fDeudor, setFDeudor] = useState("todos");
@@ -49461,6 +49528,14 @@ export default function PipelineComercial() {
     // la fila (`lineaDeVersion`, `giroResumenDeal`) lea la MISMA asignación que se acaba de simular. Releer dentro del
     // aviso `nex-simulado` no alcanza: el postMessage llega antes de que el storage de la otra pestaña se propague
     // (medido el 23-09-2026: el tubo releía y seguía en 0 versiones). Se re-emiten sólo las filas con versión.
+    // REGLA 71 · El veto que escribió el tubo —el SII inhabilitó un documento de una oferta cerrada o firmada— lo tiene
+    // que ver el detalle ya abierto: se relee el repositorio por el evento `storage`, como las versiones.
+    const onStorageVeto = (e) => {
+      if (!e || e.key !== "pc_repo_" + repoNoConfirmadas.nombre) return;
+      repoNoConfirmadas.recargar();
+      NO_CONFIRMADAS = repoNoConfirmadas.all();
+      setVerifVer((v) => v + 1);
+    };
     const onStorage = (e) => {
       if (!e || e.key !== "pc_repo_" + repoSimVersions.nombre) return;
       repoSimVersions.recargar();
@@ -49468,9 +49543,11 @@ export default function PipelineComercial() {
       setDeals((prev) => prev.map((d) => (d && d.id != null && SIM_VERSIONS[d.id] ? { ...d } : d)));
     };
     window.addEventListener("storage", onStorage);
+    window.addEventListener("storage", onStorageVeto);
     return () => {
       window.removeEventListener("message", onMsg);
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener("storage", onStorageVeto);
     };
   }, []);
   // Espejo en vivo: cualquier cambio en la conversación de una oportunidad cuyo WhatsApp del cliente
@@ -49786,15 +49863,27 @@ export default function PipelineComercial() {
     };
     setAcumulado(parchar);
     setStreamFeed(parchar);
+    // LAS INHABILITACIONES SE DECIDEN ACÁ, FUERA DE TODO UPDATER (regla 22), sobre la foto vigente del tubo: el veto de
+    // la regla 67 y el aviso al ejecutivo son efectos —storage y mensajería— y un updater puede correr dos veces. El
+    // parche del estado va después, por su updater, y es idempotente (regla 70). Un veto por motivo y operación.
+    for (const d of dealsRef.current || []) {
+      const r = aplicarEventosADeal(d, evs);
+      c.enOportunidades += r.n;
+      if (!r.inhabilitadas.length) continue;
+      c.inhabilitadas += r.inhabilitadas.length;
+      const porMotivo = new Map();
+      for (const x of r.inhabilitadas) {
+        const k = x.factura.inhabilitada.glosa;
+        if (!porMotivo.has(k)) porMotivo.set(k, []);
+        porMotivo.get(k).push(x.factura);
+      }
+      for (const [glosa, facs] of porMotivo) marcarNoVerificada(d.id, facs, { origen: "sii", motivoLbl: `El SII notificó ${glosa}` });
+    }
     setDeals((prev) => {
       let toco = false;
       const out = prev.map((d) => {
         const r = aplicarEventosADeal(d, evs);
-        if (r.deal !== d) {
-          toco = true;
-          c.enOportunidades += r.n;
-          c.avisos += r.avisos;
-        }
+        if (r.deal !== d) toco = true;
         return r.deal;
       });
       return toco ? out : prev;
@@ -50097,13 +50186,13 @@ export default function PipelineComercial() {
     // Las actualizaciones del A1 aplicadas desde la corrida anterior (regla 70) van en la misma línea, y el contador
     // vuelve a cero: una línea por evento habría sido ruido (25.000 en un stream entero).
     const act = { ...actDTERef.current };
-    actDTERef.current = { total: 0, acuses: 0, reclamos: 0, notasCredito: 0, otros: 0, enOportunidades: 0, avisos: 0 };
+    actDTERef.current = { total: 0, acuses: 0, reclamos: 0, notasCredito: 0, otros: 0, enOportunidades: 0, inhabilitadas: 0 };
     logSys(
       "info",
       "motor",
       `Corrida del inbound: ${nuevos.length} oportunidad(es) nueva(s), ${idsWarn.length} actualizada(s) con facturas nuevas, ${pendientes.length} documento(s) re-encolados${
         act.total
-          ? `; ${act.total} actualización(es) del SII (${act.acuses} acuses · ${act.reclamos} reclamos · ${act.notasCredito} notas de crédito), ${act.enOportunidades} aplicada(s) en oportunidades, ${act.avisos} aviso(s) sobre ofertas cerradas`
+          ? `; ${act.total} actualización(es) del SII (${act.acuses} acuses · ${act.reclamos} reclamos · ${act.notasCredito} notas de crédito), ${act.enOportunidades} aplicada(s) en oportunidades, ${act.inhabilitadas} documento(s) inhabilitado(s) en ofertas cerradas o firmadas (regla 71)`
           : ""
       }`,
       // El intervalo del job en producción viaja en la traza (regla 64): en la demo la corrida es cada «hora» simulada.
@@ -50854,7 +50943,7 @@ export default function PipelineComercial() {
     setAcumulado([]);
     setRecibidas(0);
     setActualizadas(0);
-    actDTERef.current = { total: 0, acuses: 0, reclamos: 0, notasCredito: 0, otros: 0, enOportunidades: 0, avisos: 0 };
+    actDTERef.current = { total: 0, acuses: 0, reclamos: 0, notasCredito: 0, otros: 0, enOportunidades: 0, inhabilitadas: 0 };
     setCorridas(0);
     setDeals([]);
     setHistoria([]);
@@ -51520,6 +51609,12 @@ export default function PipelineComercial() {
     if (!fs.length) return null;
     const d0 = (dealsRef.current || []).find((x) => x.id === id) || deals.find((x) => x.id === id) || null;
     const motivoLbl = (gestion && (gestion.motivoLbl || gestion.motivo)) || "";
+    // REGLA 71 (ADR-0021) · El mismo veto lo escribe el SII cuando la NC, el reclamo o la cesión a otro llegan sobre un
+    // documento de una oferta cerrada, publicada o firmada: el autor es el servicio, no el usuario de la sesión, y el
+    // documento viene marcado `inhabilitada`. Es la misma consecuencia que la llamada fallida: no se cursa hasta que el
+    // ejecutivo retire, re-evalúe y vuelva a publicar.
+    const porSII = !!(gestion && gestion.origen === "sii");
+    const actor = porSII ? ACTOR_SII : USERS[usuario] || usuario;
     const fecha = nowStamp();
     const nc = { ...(repoNoConfirmadas.get(id) || {}) };
     fs.forEach((fac) => {
@@ -51528,9 +51623,10 @@ export default function PipelineComercial() {
         monto: fac.monto || 0,
         deudor: fac.deudor || "",
         rutRecep: fac.rutRecep || "",
-        por: actorEtiqueta(usuario),
+        por: porSII ? ACTOR_SII : actorEtiqueta(usuario),
         fecha,
         motivo: motivoLbl,
+        ...(porSII ? { origen: "sii", cambio: (fac.inhabilitada && fac.inhabilitada.motivo) || null } : {}),
       };
     });
     repoNoConfirmadas.set(id, nc);
@@ -51538,8 +51634,10 @@ export default function PipelineComercial() {
     const folios = fs.map((f) => `#${f.folio || f.id}`).join(", ");
     logOtorgEvento(
       id,
-      USERS[usuario] || usuario,
-      `${USERS[usuario] || usuario} marcó ${fs.length} factura(s) del deudor ${deudor} como NO verificada(s) (${folios}): siguen en la oferta y la operación no se cursa hasta que el ejecutivo las retire, re-simule y vuelva a publicar`,
+      actor,
+      porSII
+        ? `${ACTOR_SII} inhabilitó ${fs.length} documento(s) del deudor ${deudor} (${folios}): ${motivoLbl}. Siguen en la oferta y la operación no se cursa hasta que el ejecutivo los retire, re-evalúe y vuelva a publicar para una nueva firma`
+        : `${actor} marcó ${fs.length} factura(s) del deudor ${deudor} como NO verificada(s) (${folios}): siguen en la oferta y la operación no se cursa hasta que el ejecutivo las retire, re-simule y vuelva a publicar`,
       motivoLbl,
     );
     if (d0) avisarNoVerificadas(d0, fs, motivoLbl);

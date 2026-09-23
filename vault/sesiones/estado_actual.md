@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-23T15:30:00Z
+timestamp: 2026-09-23T17:00:00Z
 ---
 
 # Estado actual
@@ -13,9 +13,9 @@ timestamp: 2026-09-23T15:30:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **170/170 PASA**, **61 archivos de gate de contrato**
-(535 tests), **37 casos e2e** (37/37), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
-(99 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
+(`pipeline_comercial.jsx`), build standalone, **171/171 PASA**, **62 archivos de gate de contrato**
+(552 tests), **37 casos e2e** (37/37), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(100 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
 gate. La crónica del 17 al 19-09 vive en sus logs (ADR-0001 a 0006, el linter como paso 0-bis).
 El **20-09** entró todo lo de plata: **regla 8 sin proxy** (149, ADR-0008), **girar no es acción de NEX** (43, 147,
 148), **ATR-01 en el handler** (145), el **id de la solicitud al comité** (146), las **identidades son pares reales del
@@ -36,11 +36,12 @@ quiz telefónico ([log](./2026-09-22_el_deudor_decide_la_factura_se_llama.md)).
 >    cada commit): ADR-0013 (un evento, cinco versiones: regla 68, caso 168) · 0014 · 0015 · 0016 · 0017 · 0018 ·
 >    0019 · antigüedad ≤20 días · corte y reinicio por hora · M-19 en `cerrarOferta` · M-01 (el acuse del DTE:
 >    regla 69, caso 169; el A1 ya lo traía). **El backlog decidido del 22-09 quedó entero**: 18 gaps implementados
->    ([log](./2026-09-23_backlog_decidido.md) §1–§11), con sus pantallas en `28_version_v1.e2e.mjs`. Y **ADR-0020**
->    (§12): el A1 es un **flujo de eventos por documento** (regla 70, caso 170, `regla_70` + `dtesync.test.mjs`; el activo
->    migrado a 55.549 eventos, 46 MB). **Pendiente del usuario**: qué hacer con una NC o un reclamo que llega sobre una
->    oferta publicada o firmada (hoy: aviso en la bitácora, el documento no se toca; decisión #7 de `spec-inbound` §12).
->    Sigue: los T1 sin decisión previa (gaps §2.2: G-05, G-18, G-23 … G-28), cada uno con su caso en rojo.
+>    ([log](./2026-09-23_backlog_decidido.md) §1–§11), con sus pantallas en `28_version_v1.e2e.mjs`. **ADR-0020** (§12): el
+>    A1 es un **flujo de eventos por documento** (regla 70, caso 170, `regla_70` + `dtesync.test.mjs`; activo migrado a 55.549
+>    eventos, 46 MB). **ADR-0021** (§13): sobre la oferta cerrada, publicada o firmada la NC, el reclamo o la cesión a otro
+>    **inhabilitan el documento y dejan la operación no cursable** (regla 71, caso 171; el veto de la regla 67 escrito por el
+>    SII; el ejecutivo retira, re-evalúa y vuelve a firmar). Sin decisiones pendientes. Sigue: los T1 sin decisión previa
+>    (gaps §2.2: G-05, G-18, G-23 … G-28), cada uno con su caso en rojo.
 > 2. **UI**: el selector de sesión de la navbar, 1/3 más angosto y con elipsis (desborda a 1366 px) · el chip
 >    «Negociación» en una operación ya enviada a comité · **join de empresas SIEMPRE por RUT** (8 sitios; T1) ·
 >    `.bat` una vez · O01 · 28 · 13-quater.
@@ -52,8 +53,8 @@ tubo** (**58**, `e2e-58`). Y el **proceso de curse documentado de punta a punta*
 (`Specs_Procesos/Evaluacion_Factura/spec-proceso-curse.md`; 40 cláusulas: 39 implementadas · 1 distinto · 0
 pendientes · 0 abiertas), el informe de **gaps** (36 G-nn + 12 documentales: 8 cerrados · 18 implementados · 0
 decididos · 0 por confirmar · 10 sin decisión), las **42 historias de usuario** (32 vigentes · 10 por implementar · 0 por confirmar) y
-los **casos de prueba** (144 ids, 134 con caso; 122 casos nuevos: e2e 50 · suite 67 · contrato 5). Las decisiones del
-usuario del 22 y 23-09 están en el log §8 y en **ADR-0013 … ADR-0020**; el 23-09 cerró las cinco preguntas que quedaban.
+los **casos de prueba** (145 ids, 135 con caso; 123 casos nuevos: e2e 50 · suite 68 · contrato 5). Las decisiones del
+usuario del 22 y 23-09 están en el log §8 y en **ADR-0013 … ADR-0021**; el 23-09 cerró las seis preguntas que quedaban.
 
 ## Bloqueos · los dos son del usuario, desde Windows
 El relay git bloquea el BORRADO y `refs/tags/*` con **HTTP 403** (6 de 6; las 14 ramas están `protected: false`, los
@@ -62,7 +63,6 @@ ramas ya integradas** (`elegant-fermat-pyfpnm`, `migrate-project-session-vui9dl`
 `vibrant-hawking-qrzskw`, `vibrant-hopper-33tg8j`, `local-mauricio-11sep`); no se tocan `respaldo/main-2026-09-17` ni las 5 sin mezclar.
 
 ## Deudas anotadas (no bloquean, no olvidar)
-
 1. **Lista Blanca / Deudor Autorizado, decisiones de negocio**: el activo no trae
    `VIGENTE_DESDE`/`HASTA`/`ESTADO`/`FECHA_CORTE` —una lista blanca **nunca vence**—;
    `prime = Lista Blanca || Autorizado` deja **84%** en Prime; `CUPO_SUGERIDO_MM` sin leerse (ADR-0010).

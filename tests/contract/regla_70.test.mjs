@@ -110,13 +110,13 @@ export function auditarRegla70(src) {
     if (!tk.includes(canonico("setRecibidas((n) => n + facturas.length);"))) fallos.push("«facturas recibidas» cuenta eventos y no documentos");
     if (/for \(const f of lote\)/.test(tk)) fallos.push("el bucle de clasificación recorre el lote entero, actualizaciones incluidas");
   }
-  // 6 · Sobre la oferta cerrada, la NC o el reclamo avisan y no tocan el documento.
-  const ap = tramo(can, canonico("function aplicarActualizacionDTE(deal, ev) {"), canonico("function aplicarEventosADeal("), 4000);
+  // 6 · Sobre la oferta cerrada, la NC o el reclamo se aplican Y la inhabilitan (regla 71 fija el resto).
+  const ap = tramo(can, canonico("function aplicarActualizacionDTE(deal, ev) {"), canonico("function aplicarEventosADeal("), 5000);
   if (!ap) fallos.push("no encuentro `aplicarActualizacionDTE`");
   else {
     if (!ap.includes(canonico("if (bloquea && paqueteCerrado) {"))) fallos.push("`aplicarActualizacionDTE` no distingue la oferta cerrada");
-    if (!ap.includes(canonico("avisoDTE: ev.secuencia"))) fallos.push("el aviso sobre la oferta cerrada no queda marcado en el documento (se repetiría en cada re-entrega)");
-    if (!ap.includes("el paquete no se toca solo")) fallos.push("el aviso sobre la oferta cerrada perdió su texto");
+    if (!ap.includes(canonico("inhabilitada: { motivo: ev.cambio, glosa: glosaCambioDTE(ev), secuencia: ev.secuencia, fecha: ev.fchNotificacion || null }"))) fallos.push("sobre la oferta cerrada el documento no queda marcado `inhabilitada` con su secuencia (se repetiría en cada re-entrega)");
+    if (!ap.includes("queda inhabilitado y la operación no se cursa")) fallos.push("la traza de la inhabilitación perdió su texto");
     if (!ap.includes(canonico("const paqueteCerrado = ofertaCerradaVigente(deal) || ofertaPublicada(deal) ||"))) fallos.push("«paquete cerrado» no mira el cierre, la publicación y las etapas posteriores a la firma");
   }
   // 7 · El contrato de datos: esquema 2 con el envoltorio del evento.
@@ -125,7 +125,7 @@ export function auditarRegla70(src) {
   return fallos;
 }
 
-test("regla 70: el A1 es un flujo de eventos que se pliega en un solo sitio, con el mismo pliegue que el generador; el stream y el tick separan las actualizaciones; la oferta cerrada recibe aviso y no cambios", () => {
+test("regla 70: el A1 es un flujo de eventos que se pliega en un solo sitio, con el mismo pliegue que el generador; el stream y el tick separan las actualizaciones; la oferta cerrada distingue la inhabilitación", () => {
   assert.deepEqual(auditarRegla70(jsx), []);
 });
 
@@ -141,7 +141,7 @@ const MUTANTES = [
   ["el tick no aplica las actualizaciones", (s) => s.replace("      if (actualizaciones.length) aplicarActualizacionesDTE(actualizaciones);\n", "")],
   ["«recibidas» cuenta eventos", (s) => s.replace("setRecibidas((n) => n + facturas.length);", "setRecibidas((n) => n + lote.length);")],
   ["la oferta cerrada se parcha igual", (s) => s.replace("    if (bloquea && paqueteCerrado) {", "    if (false) {")],
-  ["el aviso no queda marcado y se repetiría", (s) => s.replace("{ ...f, avisoDTE: ev.secuencia }", "{ ...f }")],
+  ["la inhabilitación no queda marcada y se repetiría", (s) => s.replace("const marcado = { ...nf, inhabilitada: {", "const marcado = { ...nf, marca: {")],
   ["facturaDeDTE deja de leer el estado por estadoDeDTE", (s) => s.replace("    ...estadoDeDTE(est),\n", '    reclamada: est.Reclamado === "1",\n')],
   ["el contrato vuelve al esquema 1", (s) => s.replace('    coleccion: "DTESYNC",\n    esquema: 2,', '    coleccion: "DTESYNC",\n    esquema: 1,')],
 ];

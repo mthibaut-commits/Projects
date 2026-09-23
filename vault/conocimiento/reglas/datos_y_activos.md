@@ -147,10 +147,11 @@ timestamp: 2026-09-17T15:29:14Z
       mientras el paquete sea del ejecutivo— y sólo si el evento es más nuevo que lo que el documento sabe
       (`secuenciaDTE`): una re-entrega no se aplica dos veces. La NC y el reclamo dejan traza en la bitácora («El SII
       notificó una nota de crédito sobre el documento #N: queda bloqueado en…»); el acuse se anota sin traza. **Sobre la
-      oferta cerrada o publicada, o después de la firma, la NC o el reclamo NO tocan el documento** —lo que se cursa no
-      cambia solo (regla 14)— y la bitácora deja el aviso (`exito: false`, marcado en el documento con `avisoDTE` para no
-      repetirlo); qué hacer con esa operación es una decisión pendiente del negocio (ADR-0020, Consecuencias). La corrida
-      siguiente reporta en su línea de bitácora del sistema cuántas actualizaciones aplicó y cuántos avisos dejó.
+      oferta cerrada o publicada, o después de la firma, la NC, el reclamo o la cesión a otro INHABILITAN el documento y
+      dejan la operación no cursable (ADR-0021, regla 71)**: el documento queda con su estado nuevo y marcado
+      `inhabilitada`, el veto de la regla 67 lo cubre y el ejecutivo retira, re-evalúa y vuelve a publicar para una nueva
+      firma. (Hasta ADR-0021, el mismo día, sólo se avisaba: era la decisión que ADR-0020 dejó abierta.) La corrida
+      siguiente reporta en su línea de bitácora del sistema cuántas actualizaciones aplicó y cuántos documentos inhabilitó.
     - **La migración fue una sola vez** (`GeneradorDatos/migrar_dtesync_eventos.js`, como `migrar_padron.js`): cada documento
       se expandió en su creación y una actualización por bandera, fechada de forma determinista dentro de la ventana del
       negocio (acuse y reclamo hasta 8 días desde la emisión, NC hasta 30) y nunca después de la recepción del batch; el
@@ -159,8 +160,8 @@ timestamp: 2026-09-17T15:29:14Z
       archivo pasó de 35 a 46 MB.
     - Caso **170** (el pliegue en los dos órdenes y la fila plana; el A1 real contado por documentos en el libro, los pares y
       el corte; el stream con la creación sin banderas y la actualización aparte; la NC en los disponibles y en la oferta
-      abierta con traza, el aviso sobre la oferta cerrada, la re-entrega, el acuse sin traza, el folio ajeno, el lote y el
-      evento del inbound), `regla_70.test.mjs` (ningún lector del log fuera del pliegue y el stream; los lectores plegados;
+      abierta con traza, la inhabilitación sobre la oferta cerrada (regla 71), la re-entrega, el acuse sin traza, el folio
+      ajeno, el lote y el evento del inbound), `regla_70.test.mjs` (ningún lector del log fuera del pliegue y el stream; los lectores plegados;
       el pliegue del fuente ejecutado en Node contra el del generador; el stream y el tick separando; el aviso sobre la
       oferta cerrada; el contrato; doce sondas) y `dtesync.test.mjs` (el bloque commiteado valida como log —creación
       primero, secuencias contiguas, fechas en ventana, orden de llegada, actualizaciones sin el documento— y `plegar`,

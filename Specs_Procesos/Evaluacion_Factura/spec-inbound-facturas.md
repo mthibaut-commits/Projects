@@ -230,9 +230,11 @@ Las facturas que califican se **acumulan**; no crean nada al instante. Cada «ho
    Las **actualizaciones del A1** (regla 70) no esperan a la corrida: en cada lote del stream parchan el documento
    donde viva (`aplicarActualizacionDTE`) —en los disponibles siempre; en la oferta mientras el paquete sea del
    ejecutivo— y la NC o el reclamo dejan traza («El SII notificó una nota de crédito sobre el documento #N: queda
-   bloqueado en…»). Sobre una oferta **cerrada o publicada**, o después de la firma, la NC o el reclamo **no tocan el
-   documento**: la bitácora avisa y la corrida cuenta el aviso (decisión #7 de §12). La corrida reporta en su línea
-   de bitácora del sistema cuántas actualizaciones aplicó.
+   bloqueado en…»). Sobre una oferta **cerrada o publicada**, o después de la firma, la NC, el reclamo o la cesión a
+   otro **inhabilitan el documento y dejan la operación no cursable** (ADR-0021, regla 71; decisión #7 de §12): el veto
+   de la regla 67 lo escribe el SII, VER-01 y el issue lo dicen, el ejecutivo recibe el aviso y retira, re-evalúa y
+   vuelve a publicar para una nueva firma. La corrida reporta en su línea de bitácora del sistema cuántas
+   actualizaciones aplicó y cuántos documentos inhabilitó.
 3. **Dimensiona el paquete** con el cupo del cliente (§6.1).
 4. **Crea la oportunidad** con su ejecutivo, su CAT, su contactabilidad y su pool de facturas.
 
@@ -411,7 +413,7 @@ Tres observaciones, en orden de importancia:
    23-09-2026 (regla 61): sí, como condición del filtro de calidad, con el tope como parámetro del tenant
    (`antiguedadMaxDias`, 20 días por defecto).
 7. **¿Qué hace el sistema cuando llega una nota de crédito o un reclamo sobre un documento de una oferta ya
-   publicada o firmada?** (ADR-0020, regla 70; 23-09-2026). Hoy el documento **no se toca**, la bitácora de la
-   operación avisa (`exito: false`) y la corrida cuenta el aviso: la decisión es del ejecutivo. La regla candidata
-   es la de ADR-0018 —marcar la operación con un issue, avisar por el centro de notificaciones, y que el ejecutivo
-   retire el documento, re-simule y vuelva a publicar para una nueva firma—. No está decidido.
+   publicada o firmada?** Decidido el 23-09-2026 e implementado el mismo día (ADR-0021, regla 71, caso 171): «se debe
+   dejar la oferta como no cursable, el documento debe quedar inhabilitado, el ejecutivo debería retirar la factura,
+   re-evaluar, volver a firmar» —un documento reclamado, anulado o cedido a otro no lo va a pagar el deudor, al margen
+   de la verificación telefónica—. El veto es el de la regla 67, escrito por el SII; la salida es la de ADR-0018.

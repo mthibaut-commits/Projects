@@ -50,13 +50,13 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 ### HU-01 · Abrir la oportunidad por cedente y actualizar la abierta
 - **Como** Inbound (sistema), **quiero** abrir una oportunidad por cedente cuando llegan facturas y sumar a la abierta sin tocar su oferta, **para** que el ejecutivo vea una sola oportunidad viva por cliente.
 - **Estado**: vigente.
-- **Reglas**: 40, 49, 11, 70 · **Cláusulas**: M-01, M-03, M-04 · **Gaps**: —.
+- **Reglas**: 40, 49, 11, 70, 71 · **Cláusulas**: M-01, M-03, M-04, M-18 · **Gaps**: —.
 - **Criterios de aceptación**:
   - CA-1 · Dado un cedente sin oportunidad abierta · Cuando la corrida trae sus facturas · Entonces aparece una fila del tubo en «Sin gestión» con la oferta vacía y las facturas en «Documentos disponibles».
   - CA-2 · Dado el mismo cedente con oportunidad en «Sin gestión» o «Negociación» · Cuando llegan facturas nuevas · Entonces «Documentos disponibles» crece sin duplicar folios y «Documentos en la oferta» no cambia (lo hace `aplicar`, `spec-inbound-facturas.md` §6, sobre la oportunidad ABIERTA; sin regla del vault ni caso: CP-002 es NUEVO. La regla 33 rige otra cosa: la oferta CERRADA es de sólo lectura hasta «Editar la oferta»).
   - CA-3 · Dado el cedente con oportunidad aceptada, cursada o perdida · Cuando llegan facturas · Entonces se abre otra oportunidad y la terminal no se reabre (regla 5).
   - CA-4 · Dado un stream que excede el tope de la Bandeja Inbound · Cuando entra lo nuevo · Entonces sale primero lo que no es de nadie y la bandeja dice cuánto botó (caso 142).
-  - CA-5 · Dado un documento que ya vive en la oportunidad (disponibles u oferta abierta) · Cuando el A1 notifica una nota de crédito, un reclamo o un acuse sobre él (ADR-0020, regla 70) · Entonces el documento queda con el estado nuevo donde vive —la NC y el reclamo bloqueándolo, con traza—, una re-entrega no se aplica dos veces, y sobre una oferta cerrada o publicada la NC o el reclamo sólo avisan (caso 170).
+  - CA-5 · Dado un documento que ya vive en la oportunidad (disponibles u oferta abierta) · Cuando el A1 notifica una nota de crédito, un reclamo o un acuse sobre él (ADR-0020, regla 70) · Entonces el documento queda con el estado nuevo donde vive —la NC y el reclamo bloqueándolo, con traza—, una re-entrega no se aplica dos veces, y sobre una oferta cerrada, publicada o firmada la NC, el reclamo o la cesión a otro lo inhabilitan y dejan la operación no cursable hasta que el ejecutivo lo retire, re-evalúe y vuelva a publicar para una nueva firma (casos 170 y 171; regla 71, ADR-0021).
 - **Notas**: el stream no es determinista; el caso e2e lo prueba con el Modo Directorio o inyectando por el canal (`e2e-31`).
 
 ### HU-02 · La corrida es un batch del servidor con topes del tenant

@@ -8434,22 +8434,113 @@
     const cerrado = { ...deal, ofertaCerrada: true, negocioNum: 170 };
     const r3 = aplicarActualizacionDTE(cerrado, evNC2);
     const r3b = aplicarActualizacionDTE(r3.deal, evNC2);
-    const avisoOk = !!r3.cambio && r3.cambio.donde === "aviso" && r3.deal.facturasOp[0].notaCredito === false && r3.deal.facturasOp[0].avisoDTE === 2 && r3.deal.historialContacto.length === 1
-      && r3.deal.historialContacto[0].exito === false && /⚠/.test(r3.deal.historialContacto[0].resultado) && /cerrada/.test(r3.deal.historialContacto[0].resultado) && r3b.cambio === null && r3b.deal === r3.deal;
+    // Sobre la oferta cerrada la NC INHABILITA el documento (regla 71, ADR-0021): queda con su estado, marcado, con traza en rojo; y no dos veces.
+    const avisoOk = !!r3.cambio && r3.cambio.donde === "inhabilitada" && r3.deal.facturasOp[0].notaCredito === true && r3.deal.facturasOp[0].inhabilitada.motivo === "nota_credito"
+      && r3.deal.facturasOp[0].inhabilitada.secuencia === 2 && r3.cambio.factura === r3.deal.facturasOp[0] && r3.deal.historialContacto.length === 1
+      && r3.deal.historialContacto[0].exito === false && /⚠/.test(r3.deal.historialContacto[0].resultado) && /cerrada/.test(r3.deal.historialContacto[0].resultado) && /inhabilitado/.test(r3.deal.historialContacto[0].resultado)
+      && r3b.cambio === null && r3b.deal === r3.deal;
     const r4 = aplicarActualizacionDTE(cerrado, evs[1]); // el acuse sí se anota con la oferta cerrada, y sin traza
     const acuseOk = !!r4.cambio && r4.cambio.donde === "disponibles" && r4.deal.facturasDisponibles[0].acuse === "aceptada" && r4.deal.historialContacto.length === 0;
     const r5 = aplicarActualizacionDTE(deal, eventoActualizacionDTE(act(17999, 2, { NotaCredito: "1" }), 8));
     const ajenoOk = r5.cambio === null && r5.deal === deal;
     const lote = aplicarEventosADeal(cerrado, [evs[1], evNC2]);
-    const loteOk = lote.n === 1 && lote.avisos === 1 && lote.deal.facturasDisponibles[0].acuse === "aceptada" && lote.deal.facturasOp[0].notaCredito === false;
+    const loteOk = lote.n === 1 && lote.inhabilitadas.length === 1 && lote.inhabilitadas[0].factura.id === f2.id && lote.inhabilitadas[0].ev === evNC2 && lote.deal.facturasDisponibles[0].acuse === "aceptada" && lote.deal.facturasOp[0].notaCredito === true;
     // (e) El evento del inbound: la NC apaga «Buena factura».
     const e0 = evs[0], e1 = aplicarActualizacionAEvento(e0, evs[2]);
     const buena = (e) => CRITERIO_PRED["Buena factura"]({ ...e, esCliente: true, tipoDeudor: "Lista Blanca", inboundBucket: "CAT1", histFactoring: "bice", diasEmision: 3 }) === true;
     const eventoOk = e1 !== e0 && e1.notaCredito === true && e1.facturasOp[0].notaCredito === true && buena(e0) === true && buena(e1) === false && aplicarActualizacionAEvento(e1, evs[2]) === e1;
-    ok("170 el A1 es un flujo de eventos por documento: plegarDTE deja un documento por (emisor, folio) con el estado más nuevo cualquiera sea el orden; el libro, los pares y el corte cuentan documentos; el stream lleva la creación sin banderas y la actualización aparte; la NC llegada parcha los disponibles y la oferta abierta con traza, sobre la oferta cerrada sólo avisa, y no se aplica dos veces",
+    ok("170 el A1 es un flujo de eventos por documento: plegarDTE deja un documento por (emisor, folio) con el estado más nuevo cualquiera sea el orden; el libro, los pares y el corte cuentan documentos; el stream lleva la creación sin banderas y la actualización aparte; la NC llegada parcha los disponibles y la oferta abierta con traza, sobre la oferta cerrada la inhabilita (regla 71), y no se aplica dos veces",
        plegOk && activoOk && streamOk && dispOk && idemOk && ofertaOk && avisoOk && acuseOk && ajenoOk && loteOk && eventoOk,
        `pliegue ${plegOk} · A1: ${log.length} eventos → ${docs.length} documentos (${nAct} actualizaciones), libro/pares/corte sobre documentos ${activoOk} · stream ${streamOk}`
-       + ` · NC en disponibles ${dispOk} · idempotente ${idemOk} · NC en oferta abierta ${ofertaOk} · oferta cerrada: aviso sin tocar ${avisoOk} · acuse sin traza ${acuseOk} · folio ajeno ${ajenoOk} · lote ${loteOk} · evento del inbound ${eventoOk}`);
+       + ` · NC en disponibles ${dispOk} · idempotente ${idemOk} · NC en oferta abierta ${ofertaOk} · oferta cerrada: inhabilitada con traza ${avisoOk} · acuse sin traza ${acuseOk} · folio ajeno ${ajenoOk} · lote ${loteOk} · evento del inbound ${eventoOk}`);
+  }
+
+  {
+    // 171 · LA NC, EL RECLAMO O LA CESIÓN A OTRO SOBRE UNA OFERTA CERRADA, PUBLICADA O FIRMADA DEJAN LA OPERACIÓN NO
+    //       CURSABLE (regla 71, ADR-0021; el usuario, 23-09-2026: «se debe dejar la oferta como no cursable, el documento
+    //       debe quedar inhabilitado, el ejecutivo debería retirar la factura, re-evaluar, volver a firmar. Cuando una
+    //       factura está reclamada, anulada y/o cedida a otro, quiere decir que el deudor no va a pagar esa factura […] es
+    //       como que esté no verificada, al margen que la verificación telefónica haya dado por verificada»). Lo que fija
+    //       por nombre: (a) la decisión pura sobre la oferta firmada: la NC y el reclamo parchan el documento y lo marcan
+    //       `inhabilitada` con traza `exito: false`; el acuse no inhabilita; sobre la oferta abierta no hay inhabilitación;
+    //       la re-entrega no marca dos veces; (b) con el veto del SII plantado (`origen: "sii"`), `verifResumenDeal` cuenta el
+    //       documento como PENDIENTE aunque su llamada esté registrada como completada, `issueVerificacion` lo nombra aparte
+    //       con su motivo y el título del SII, VER-01 lo cuenta y lo dice, `estadoCandidata` lo etiqueta «Inhabilitada por
+    //       el SII» con la instrucción; mezclado con el veto de la llamada el título dice las dos cosas, y sólo con la
+    //       llamada nada cambia respecto del 167; (c) el aviso del sistema al ejecutivo lleva el asunto del SII, nombra el
+    //       folio y el motivo, dice que no se podrá cursar y qué hacer, se reusa; sin inhabilitadas el asunto es el de la
+    //       verificación fallida.
+    const ID = "T-171", RUT171 = "76.171.171-1";
+    const estadoVacio = () => ({ NotaCredito: null, FchNotaCredito: null, FolioNotaCredito: null, TipoDTERef: null, FolioDTERef: null, Aceptado: null, Reclamado: null, FchReclamo: null, FchRecepcion: corteDTE(), FchAcuseRecibo: null });
+    const fila = (folio) => ({ RUTEmisor: RUT171, RznSoc: "Cliente 171", TipoDTE: "33", TipoDTEDesc: "Factura electronica", Folio: folio, FchEmis: diaISO(corteDTE(), -3), FchVenc: diaISO(corteDTE(), 40),
+      RUTRecep: LB[0], RznSocRecep: nomDe(LB[0]), MntTotal: 1000000, FormaPago: "2", EstadoDTE: estadoVacio(), Servicio: "DTESync", Notificacion: "DTE_SINCRONIZADO", FchNotificacion: diaISO(corteDTE(), -3), Secuencia: 1, Extras: null });
+    const act = (folio, seq, est) => ({ RUTEmisor: RUT171, TipoDTE: "33", Folio: folio, EstadoDTE: { ...estadoVacio(), ...est }, Servicio: "DTESync", Notificacion: "DTE_ACTUALIZADO", FchNotificacion: diaISO(corteDTE(), -1), Secuencia: seq, Extras: null });
+    const f1 = facturaDeDTE(fila(17101)), f2 = facturaDeDTE(fila(17102)), f3 = facturaDeDTE(fila(17103));
+    const evNC = eventoActualizacionDTE(act(17101, 2, { NotaCredito: "1", FchNotaCredito: corteDTE(), FolioNotaCredito: 517101 }), 1);
+    const evRe = eventoActualizacionDTE(act(17102, 2, { Reclamado: "1", FchReclamo: corteDTE() }), 2);
+    const evAc = eventoActualizacionDTE(act(17103, 2, { Aceptado: "2", FchAcuseRecibo: corteDTE() }), 3);
+    const abierta = { id: ID, rutEmisor: RUT171, cliente: "Cliente 171", exec: "CR", stage: "oferta", monto: 3000000, facturasOp: [f1, f2, f3], facturasDisponibles: [], historialContacto: [] };
+    const firmada = { ...abierta, stage: "aceptadas", clienteAcepto: true, ofertaCerrada: true, negocioNum: 171 };
+    // (a) La decisión pura, en las dos direcciones.
+    const rA = aplicarActualizacionDTE(firmada, evNC), fA = rA.deal.facturasOp[0];
+    const rR = aplicarActualizacionDTE(rA.deal, evRe), fR = rR.deal.facturasOp[1];
+    const rAc = aplicarActualizacionDTE(rR.deal, evAc), fAc = rAc.deal.facturasOp[2];
+    const rDos = aplicarActualizacionDTE(rAc.deal, evNC);
+    const rAb = aplicarActualizacionDTE(abierta, evNC);
+    const puraOk = !!rA.cambio && rA.cambio.donde === "inhabilitada" && rA.cambio.factura === fA && fA.notaCredito === true && fA.folioNotaCredito === 517101 && !!fA.inhabilitada
+      && fA.inhabilitada.motivo === "nota_credito" && /nota de crédito/.test(fA.inhabilitada.glosa) && fA.inhabilitada.secuencia === 2 && fA.secuenciaDTE === 2
+      && rA.deal.historialContacto.length === 1 && rA.deal.historialContacto[0].exito === false && /inhabilitado/.test(rA.deal.historialContacto[0].resultado) && /nueva firma/.test(rA.deal.historialContacto[0].resultado)
+      && !!rR.cambio && rR.cambio.donde === "inhabilitada" && fR.reclamada === true && fR.inhabilitada.motivo === "reclamo" && rR.deal.historialContacto.length === 2
+      && !!rAc.cambio && rAc.cambio.donde === "oferta" && fAc.acuse === "aceptada" && !fAc.inhabilitada && rAc.deal.historialContacto.length === 2
+      && rDos.cambio === null && rDos.deal === rAc.deal
+      && !!rAb.cambio && rAb.cambio.donde === "oferta" && !rAb.deal.facturasOp[0].inhabilitada && rAb.deal.facturasOp[0].notaCredito === true;
+    const lote = aplicarEventosADeal(firmada, [evNC, evRe, evAc]);
+    const loteOk = lote.n === 1 && lote.inhabilitadas.length === 2 && lote.inhabilitadas.map((x) => x.factura.id).join() === [f1.id, f2.id].join() && lote.inhabilitadas[0].ev === evNC
+      && lote.deal.facturasOp[2].acuse === "aceptada";
+    // (b) Con el veto del SII plantado: pendiente aunque la llamada esté en verde; el issue, VER-01 y la candidata lo dicen.
+    const dealV = { ...firmada, facturasOp: [fA, f2, f3] };
+    const vetoSII = { [ID]: { [f1.id]: { folio: f1.folio, monto: f1.monto, deudor: f1.deudor, rutRecep: f1.rutRecep, por: ACTOR_SII, fecha: "hoy", motivo: "El SII notificó una nota de crédito (folio 517101)", origen: "sii", cambio: "nota_credito" } } };
+    const telOk = { [ID]: { [f1.id]: { por: "EV", fecha: "hoy" }, [f2.id]: { por: "EV", fecha: "hoy" }, [f3.id]: { por: "EV", fecha: "hoy" } } };
+    const r0 = verifResumenDeal(dealV, { tel: telOk, vetadas: {} }), r1 = verifResumenDeal(dealV, { tel: telOk, vetadas: vetoSII });
+    const resumenOk = r0.noVerif === 0 && r1.noVerif === 1 && r1.sii === 1 && r1.pend === r0.pend + 1 && r1.noVerificadas[0].origen === "sii" && /nota de crédito/.test(r1.noVerificadas[0].motivo) && r1.noVerificadas[0].folio === f1.folio;
+    const iss1 = issueVerificacion(dealV, { tel: telOk, vetadas: vetoSII });
+    const issueOk = !!iss1 && iss1.n === 1 && iss1.sii === 1 && iss1.titulo === "Documentos inhabilitados por el SII: no se puede cursar" && iss1.texto.includes("#" + f1.folio) && /nota de crédito/.test(iss1.texto)
+      && /inhabilitado\(s\) por el SII/.test(iss1.texto) && /no se cursa/.test(iss1.texto) && /firme la nueva operación/.test(iss1.texto) && iss1.folios[0] === f1.folio && iss1.deudores[0] === f1.deudor;
+    const vetoLlamada = { folio: f2.folio, monto: f2.monto, deudor: f2.deudor, rutRecep: f2.rutRecep, por: "test", fecha: "hoy", motivo: "No reconoce la factura" };
+    const issM = issueVerificacion(dealV, { tel: telOk, vetadas: { [ID]: { ...vetoSII[ID], [f2.id]: vetoLlamada } } });
+    const mixtoOk = !!issM && issM.n === 2 && issM.sii === 1 && issM.titulo === "Facturas no verificadas e inhabilitadas por el SII: no se puede cursar" && /no pudieron ser verificadas/.test(issM.texto) && /inhabilitado\(s\) por el SII/.test(issM.texto);
+    const issL = issueVerificacion(dealV, { tel: telOk, vetadas: { [ID]: { [f2.id]: vetoLlamada } } });
+    const llamadaOk = !!issL && issL.sii === 0 && issL.n === 1 && issL.titulo === "Facturas no verificadas: no se puede cursar" && !/SII/.test(issL.texto);
+    let ver01 = null, ver01Err = "";
+    try {
+      const cc = controlesIntegracion(dealV, { tel: telOk, vetadas: vetoSII });
+      const lista = Array.isArray(cc) ? cc : (cc && (cc.faltas || cc.controles || cc.lista)) || [];
+      ver01 = lista.find((x) => x && x.codigo === "VER-01") || null;
+    } catch (e) { ver01Err = String((e && e.message) || e).slice(0, 120); }
+    const ver01Ok = !!ver01 && /inhabilitada\(s\) por el SII/.test(ver01.detalle || "") && /retirarlas, re-simular y volver a publicar/.test(ver01.detalle || "");
+    const cand = estadoCandidata(fA, dealV, { vetadas: vetoSII }), candL = estadoCandidata(f2, dealV, { vetadas: { [ID]: { [f2.id]: vetoLlamada } } });
+    const candOk = cand.agregable === false && cand.bloqueada === true && cand.clave === "inhabilitada" && cand.label === "Inhabilitada por el SII" && /nota de crédito/.test(cand.detalle) && /retirarlo/.test(cand.detalle)
+      && candL.clave === "noConfirmada" && candL.label === "El deudor no la confirmó";
+    // (c) El aviso al ejecutivo, con el asunto del SII; el de la llamada sigue siendo el suyo.
+    const antes = HILOS.length;
+    let avisoOk = false, asuntoOk = false, avisoDet = "";
+    try {
+      const h = avisarNoVerificadas(dealV, [fA], "El SII notificó una nota de crédito (folio 517101)");
+      const msg = h && h.mensajes[h.mensajes.length - 1];
+      const h2 = avisarNoVerificadas(dealV, [fA], "otra vez");
+      avisoOk = !!h && !!msg && msg.de === CODE_SISTEMA && h.asunto === `Documentos inhabilitados por el SII · ${ID}` && h.participantes.includes("CR") && !h.participantes.includes(CODE_SISTEMA)
+        && msg.texto.includes(ID) && msg.texto.includes("N° 171") && msg.texto.includes("#" + f1.folio) && /nota de crédito/.test(msg.texto) && /no se podrá cursar/.test(msg.texto) && /no va a pagar/.test(msg.texto)
+        && /publica de nuevo la oferta/.test(msg.texto) && h2 === h && h.mensajes.length === 2 && hiloNoLeido(h, "CR");
+      const hL = avisarNoVerificadas(dealV, [f2], "No reconoce la factura");
+      asuntoOk = !!hL && hL !== h && hL.asunto === `Verificación fallida · ${ID}` && /no pudieron ser verificadas/.test(hL.mensajes[hL.mensajes.length - 1].texto) && HILOS.filter((x) => x.dealId === ID).length === 2;
+      avisoDet = msg ? msg.texto.slice(0, 90) : "sin mensaje";
+    } finally {
+      HILOS.length = antes;
+    }
+    ok("171 la NC, el reclamo o la cesión a otro sobre una oferta cerrada, publicada o firmada inhabilitan el documento y dejan la operación no cursable: el documento queda con su estado y marcado, el veto del SII cuenta como pendiente aunque la llamada esté en verde, el issue, VER-01 y la candidata lo dicen con su motivo, y el aviso del sistema al ejecutivo pide retirar, re-evaluar y volver a publicar para una nueva firma",
+       puraOk && loteOk && resumenOk && issueOk && mixtoOk && llamadaOk && ver01Ok && candOk && avisoOk && asuntoOk,
+       `decisión pura ${puraOk} · lote ${loteOk} · pendiente con la llamada en verde (${r0.pend}→${r1.pend}) ${resumenOk} · issue «${iss1 ? iss1.titulo : "—"}» ${issueOk} · mixto ${mixtoOk} · sólo llamada ${llamadaOk}`
+       + ` · VER-01 ${ver01Ok}${ver01Err ? " (" + ver01Err + ")" : ""} · candidata «${cand.label}» ${candOk} · aviso «${avisoDet}» ${avisoOk} · asunto de la llamada intacto ${asuntoOk}`);
   }
 
   console.log(out.join("\n"));
