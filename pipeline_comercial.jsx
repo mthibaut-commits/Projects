@@ -1183,6 +1183,8 @@ const CLOSE_REASONS = [
   { k: "documentation", label: "Documentación", result: "lost" },
   { k: "grant_block", label: "Bloqueo de otorgamiento", result: "lost" },
   { k: "inactivity", label: "Caducada por inactividad", result: "expired" },
+  // El comité de crédito rechazó la línea puntual y no quedó ninguna factura en la oferta (ADR-0015, regla 65).
+  { k: "committee_reject", label: "Línea rechazada por el comité", result: "lost" },
   { k: "other", label: "Otro", result: "lost" },
 ];
 const closeReasonLabel = (k) => {
@@ -41702,6 +41704,79 @@ function solicitudComiteDeOferta(deal, ev, ejecutivo, aprobadaVigente = 0) {
     automatica: true,
   };
 }
+// EL RECHAZO DEL COMITÉ, puro (ADR-0015, regla 65): qué le pasa a la operación cuando la API 3 devuelve «Rechazada»
+// para las líneas de detalle de su solicitud. Recibe el negocio, la solicitud y sus versiones; devuelve qué facturas se
+// retiran (las del deudor cuya línea se rechazó), qué queda, si la operación se pierde (no queda ninguna: causa
+// «Línea rechazada por el comité», regla 5) y, si no, el patch que la REABRE —vuelve a Oferta con `enEdicion`, y con
+// `reabierta` si había firma que revocar (regla 1): el cliente firmó un paquete que ya no es el que se va a cursar— y
+// la versión con motivo `comite_rechazo`, cuya asignación sólo ENCOGE (`recortarAsignacion`, regla 13). No toca nada.
+function rechazoComiteDecision(deal, sol, versiones) {
+  if (!deal || !sol) return { aplica: false, motivo: "sin_datos" };
+  const lineas = (sol.detalle || []).filter((d) => d && (d.estado || sol.estado) === "Rechazada");
+  if (!lineas.length) return { aplica: false, motivo: "sin_rechazo" };
+  if (deal.stage === "perdida" || deal.stage === "giro" || deal.integracion === "aprobada") return { aplica: false, motivo: "terminal" };
+  const nombres = new Set(lineas.map((d) => d.deudor).filter(Boolean));
+  const ruts = new Set(lineas.map((d) => d.rutDeudor).filter(Boolean));
+  const fs = itemizarFacturas(deal) || [];
+  const retiradas = fs.filter((f) => f && ((f.rutRecep && ruts.has(f.rutRecep)) || nombres.has(f.deudor)));
+  if (!retiradas.length) return { aplica: false, motivo: "sin_facturas_del_deudor" };
+  const quedan = fs.filter((f) => !retiradas.includes(f));
+  const vs = versiones || [];
+  const prev = vs.length ? vs[vs.length - 1] : null;
+  const origen = `Comité · línea rechazada (${sol.idProceso || "—"}) · ${retiradas.length} factura(s) del deudor retirada(s)`;
+  const version =
+    prev && prev.linea
+      ? {
+          ...prev,
+          v: vs.length + 1,
+          rev: vs.length,
+          ts: nowStamp(),
+          origen,
+          motivo: "comite_rechazo",
+          linea: recortarAsignacion(
+            prev.linea,
+            quedan.map((f) => f.id),
+          ),
+        }
+      : null;
+  if (!quedan.length) return { aplica: true, perdida: true, retiradas, quedan: [], version, closeReason: "committee_reject" };
+  const monto = +quedan.reduce((a, f) => a + (f.monto || 0), 0).toFixed(1);
+  const porDeudor = {};
+  quedan.forEach((f) => {
+    const k = f.deudor;
+    porDeudor[k] = porDeudor[k] || { name: k, facturas: 0, monto: 0 };
+    porDeudor[k].facturas += 1;
+    porDeudor[k].monto += f.monto || 0;
+  });
+  const deudores = Object.values(porDeudor)
+    .map((x) => ({ ...x, monto: Math.round(x.monto) }))
+    .sort((a, b) => b.monto - a.monto);
+  const firmada = aprobacionFormalCliente(deal);
+  const marca = {
+    desde: deal.stage,
+    ts: nowStamp(),
+    por: "Comité de crédito",
+    versionAceptada: vs.length,
+    reserva: prev && prev.linea ? prev.linea.cursable : 0,
+    motivo: "comite_rechazo",
+    idProceso: sol.idProceso || null,
+  };
+  const patch = {
+    stage: "oferta",
+    time: nowStamp(),
+    stale: false,
+    enEdicion: marca,
+    ...(firmada ? { reabierta: marca } : {}),
+    facturasOp: quedan,
+    facturasDisponibles: [...(deal.facturasDisponibles || []), ...retiradas.map((f) => ({ ...f, motivoRetiro: "comite_rechazo" }))],
+    facturas: quedan.length,
+    monto,
+    deudores,
+    deudor: deudores[0] ? deudores[0].name : deal.deudor,
+    status: `Línea rechazada por el comité · ${retiradas.length} factura(s) retirada(s) · la operación se reabre para una nueva firma`,
+  };
+  return { aplica: true, perdida: false, retiradas, quedan, version, patch, firmada };
+}
 // ¿Esta solicitud pide lo MISMO que otra? Al editar una oferta ya cerrada y volver a cerrarla, lo que
 // no cabe en la línea se vuelve a calcular: si cambió, la nueva es la que el comité tiene que ver; si
 // no cambió, inyectarla otra vez le deja dos peticiones idénticas y ninguna forma de saber cuál es la
@@ -42564,10 +42639,22 @@ function deudoresSolicitadosLinea(rutCliente) {
 function api3EstadoProceso(idProceso) {
   const s = SOLICITUDES_LINEA.find((x) => x.idProceso === idProceso);
   if (!s) return null;
-  const fin = Math.abs(hashStr(idProceso)) % 5 === 0 ? "Observada" : "Aprobada";
+  // EL COMITÉ ES EXTERNO Y RESPONDE ACEPTACIÓN O RECHAZO (ADR-0015, regla 65): «Aprobada», «Observada» o «Rechazada»,
+  // como el contrato (EN_GESTION → … → APROBADA | OBSERVADA | RECHAZADA). El mock resuelve por el id, y el desenlace
+  // se escribe POR LÍNEA DE DETALLE —que es lo que el comité aprueba o rechaza—; acá todas las líneas de una
+  // solicitud comparten el desenlace, y el manejador del rechazo las recorre una a una igual.
+  const r = Math.abs(hashStr(idProceso)) % 5;
+  const fin = r === 0 ? "Observada" : r === 1 ? "Rechazada" : "Aprobada";
   const SEQ = ["En gestión", "En análisis de Riesgo", "En comité", fin];
   s.estado = SEQ[Math.min(SEQ.length - 1, s.refrescos)];
   s.tsEstado = nowStamp();
+  // El DESENLACE se escribe por línea de detalle; mientras el proceso está en curso las líneas no tienen estado
+  // propio (los intermedios son del proceso, y escribirlos mutaría la huella de una solicitud que todavía viaja).
+  if (SEQ.indexOf(s.estado) === SEQ.length - 1)
+    (s.detalle || []).forEach((d) => {
+      if (d) d.estado = s.estado;
+    });
+  if (s.estado === "Rechazada" && !s.observacion) s.observacion = "El comité de crédito rechazó la línea puntual solicitada.";
   // Resuelta y aprobada: la línea queda CONSTITUIDA y entra a la cartera del cliente. Desde acá C05
   // deja de salir al re-evaluar la operación, que es su vía natural de regularización.
   if (s.estado === "Aprobada" && !s.constituida) {
@@ -44739,7 +44826,8 @@ function DetalleSolicitud({ sol }) {
     "En análisis de Riesgo": { bg: "#FFF7ED", fg: "#C2410C" },
     "En comité": { bg: "#f5f3ff", fg: "#7C3AED" },
     Aprobada: { bg: "#F0FDF4", fg: "#16A34A" },
-    Observada: { bg: "#fef2f2", fg: "#EF4444" },
+    Observada: { bg: "#FFF7ED", fg: "#C2410C" },
+    Rechazada: { bg: "#fef2f2", fg: "#B91C1C" },
   };
   // La observación NOMBRA la operación que originó la solicitud: sin eso, quien la aprueba no puede
   // volver a lo que la motivó. `origen` sólo lo traen las automáticas (el cierre de una oferta);
@@ -44930,7 +45018,8 @@ function LineasBandeja({ onNueva, tick, onRefrescar, cargando }) {
     "En análisis de Riesgo": { bg: "#FFF7ED", fg: "#C2410C" },
     "En comité": { bg: "#f5f3ff", fg: "#7C3AED" },
     Aprobada: { bg: "#F0FDF4", fg: "#16A34A" },
-    Observada: { bg: "#fef2f2", fg: "#EF4444" },
+    Observada: { bg: "#FFF7ED", fg: "#C2410C" },
+    Rechazada: { bg: "#fef2f2", fg: "#B91C1C" },
   };
   // MISMA TABLA QUE «VIGENTES» (17-09-2026, pedido del usuario). Las dos pestañas de esta pantalla
   // listan lo mismo —líneas de un cliente— y se comparan cambiando de pestaña, así que tienen que
@@ -45049,6 +45138,11 @@ function LineasBandeja({ onNueva, tick, onRefrescar, cargando }) {
                         >
                           {s.estado}
                         </span>
+                        {s.observacion ? (
+                          <div className="mt-0.5 t9" style={{ color: C.faint, whiteSpace: "normal", maxWidth: 220 }}>
+                            {s.observacion}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 t9" style={{ color: C.faint }}>
                         {s.tsEstado || s.ts}
@@ -45073,7 +45167,7 @@ function LineasBandeja({ onNueva, tick, onRefrescar, cargando }) {
     </div>
   );
 }
-function LineasView({ soloExec, usuario }) {
+function LineasView({ soloExec, usuario, onRechazo }) {
   const [q, setQ] = useState("");
   const [fSalud, setFSalud] = useState("todos");
   const [sub, setSub] = useState("vigentes"); // vigentes | enproceso
@@ -45086,7 +45180,9 @@ function LineasView({ soloExec, usuario }) {
   const refrescarEstados = () => {
     api2ListarProcesos().forEach((s) => {
       s.refrescos = (s.refrescos || 0) + 1;
-      api3EstadoProceso(s.idProceso);
+      const est = api3EstadoProceso(s.idProceso);
+      // El rechazo del comité se APLICA al consultarlo (ADR-0015, regla 65): retira las facturas del deudor y reabre.
+      if (est === "Rechazada" && onRechazo && !s.rechazoAplicado) onRechazo(s);
     });
     setBTick((t) => t + 1);
   };
@@ -47182,6 +47278,70 @@ export default function PipelineComercial() {
       }),
     );
     setSelected(null);
+  };
+  // EL RECHAZO DEL COMITÉ (ADR-0015, regla 65): lo decide `rechazoComiteDecision` y acá sólo se ESCRIBE. Lo dispara
+  // «Consultar estados» de Líneas › Solicitudes cuando la API 3 devuelve «Rechazada»; cada solicitud se aplica UNA vez.
+  const aplicarRechazoComite = (sol) => {
+    if (!sol || sol.rechazoAplicado) return null;
+    const id = sol.origen && sol.origen.dealId;
+    const d0 = id ? (dealsRef.current || []).find((x) => x.id === id) : null;
+    const dec = rechazoComiteDecision(d0, sol, repoSimVersions.get(id) || []);
+    sol.rechazoAplicado = true;
+    if (!dec.aplica) {
+      logSys("info", "lineas", `Rechazo del comité (${sol.idProceso}) sin efecto sobre ${id || "—"}: ${dec.motivo}`, {
+        solicitud: sol.idProceso,
+        operacion: id || null,
+      });
+      return dec;
+    }
+    const folios = dec.retiradas.map((f) => f.folio || f.id);
+    if (dec.version) repoSimVersions.push(id, dec.version);
+    if (dec.perdida) {
+      reject(id, dec.closeReason);
+      logSys("warn", "lineas", `Línea rechazada por el comité (${sol.idProceso}): ${id} queda sin facturas y se pierde`, {
+        solicitud: sol.idProceso,
+        operacion: id,
+        folios,
+      });
+      registrarAuditoria({
+        usuario: "Comité de crédito",
+        modulo: "Líneas · Comité",
+        accion: "Línea rechazada · operación perdida",
+        glosa: `${sol.idProceso} · ${d0.cliente} · ${folios.length} factura(s) del deudor sin línea`,
+        empresaId: id,
+        exito: false,
+      });
+      return dec;
+    }
+    const patch = {
+      ...dec.patch,
+      historialContacto: traza(
+        d0,
+        `Línea rechazada por el comité (${sol.idProceso}) · ${folios.length} factura(s) del deudor retirada(s): ${folios.join(", ")} · la operación se reabre para una nueva firma`,
+      ),
+    };
+    setDeals((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+    setSelected((sel) => (sel && sel.id === id ? { ...sel, ...patch } : sel));
+    logSys(
+      "warn",
+      "lineas",
+      `Línea rechazada por el comité (${sol.idProceso}): ${folios.length} factura(s) retirada(s) de ${id} · la operación se reabre para una nueva firma`,
+      {
+        solicitud: sol.idProceso,
+        operacion: id,
+        folios,
+        firmaRevocada: !!dec.firmada,
+      },
+    );
+    registrarAuditoria({
+      usuario: "Comité de crédito",
+      modulo: "Líneas · Comité",
+      accion: "Línea rechazada · facturas retiradas y operación reabierta",
+      glosa: `${sol.idProceso} · ${d0.cliente} · ${folios.length} factura(s) · ${fmtMM(dec.retiradas.reduce((a, f) => a + (f.monto || 0), 0))}${dec.firmada ? " · firma revocada" : ""}`,
+      empresaId: id,
+      exito: true,
+    });
+    return dec;
   };
   // El ejecutivo envía un mensaje al cliente por WhatsApp (MODO MANUAL). No se fabrica respuesta del cliente:
   // el mensaje sale al WhatsApp del cliente y la respuesta llega como evento real (wa-cliente) cuando responde.
@@ -51552,7 +51712,7 @@ export default function PipelineComercial() {
                 <OperacionesView deals={deals} onOpen={abrirDetalle} soloExec={soloExec} />
               </>
             ) : vistaApp === "lineas" ? (
-              <LineasView soloExec={soloExec} usuario={usuario} />
+              <LineasView soloExec={soloExec} usuario={usuario} onRechazo={aplicarRechazoComite} />
             ) : vistaApp === "config" ? (
               <>
                 <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>

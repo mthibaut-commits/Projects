@@ -196,6 +196,17 @@ definitions:
                 estado: { type: string }
                 fecha: { type: string, format: date-time }
                 observacion: { type: string }
+          lineasDetalle:
+            type: array
+            description: "El desenlace por línea de detalle (ADR-0015): el comité aprueba o rechaza línea a línea; NEX aplica RECHAZADA al consultarla"
+            items:
+              type: object
+              properties:
+                deudor: { type: string }
+                rutDeudor: { type: string }
+                monto: { type: integer, description: "pesos" }
+                tipoLinea: { type: string, enum: [puntual, normal] }
+                estado: { type: string, enum: [EN_GESTION, EN_ANALISIS_RIESGO, EN_COMITE, APROBADA, OBSERVADA, RECHAZADA] }
   Error:
     type: object
     properties:

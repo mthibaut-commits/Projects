@@ -92,7 +92,7 @@ selector y **por qué el sustituto es legítimo** cuando el disparador real no s
 | **MN-09** | Ticket crafteado | `abrirConTicket(h, extra, usuario)` (`e2e-30`): `emitirTicketDetalle("deal", id, usuario, { deal: {...payload.deal, ...últimoPatch, ...extra}, usuario, tab: null, ts })` en el tubo y `ctx.newPage().goto(url + "?t=" + uuid)`. Sirve para menús y compuertas en un estado que el flujo no da rápido (publicada, otra sesión); no para el veredicto (la foto no vuelve al tubo). **Prerrequisito**: `abrirConTicket` toma el PRIMER ticket `tipo: "deal"` de `TICKETS_EMITIDOS` y lanza «no encuentro el ticket del detalle … ¿se abrió el detalle desde el tubo?» si no hay ninguno; por tanto exige un MN-02 previo en la misma sesión (dentro del caso o del archivo) y craftea ESE deal, no uno elegido por id. |
 | **MN-10** | Restauración | `fotoRepos` / `restaurarRepos` de las claves `pc_repo_*` (`e2e-29`, `e2e-15-bis-bis`; barren todo `pc_repo_*`). Las claves reales las arma `crearRepo(nombre)` como `"pc_repo_" + nombre` con forma `{[tenantId]: {[id]: valor}}`: `pc_repo_otorgamiento_visado` (`repoVisado`), `pc_repo_verificacion_telefonica` (`repoVerifTel`), `pc_repo_giro_asignacion` (`repoGiro`), `pc_repo_linea_comite` (`repoLineaComite`), `pc_repo_simulacion_version` (`repoSimVersions`), `pc_repo_solicitud_comite` (`repoSolicitudComite`), `pc_repo_factura_no_confirmada` (`repoNoConfirmadas`, el veto de CP-091; regla 6). En los CP se lee por `repoX.get(id)` desde `evaluate`, nunca por una clave abreviada. Retiro de la solicitud en `api2ListarProcesos()` y de `SOLIC_SEQ`, borrado de `fs_curse_<neg>`, filtro rápido al que estaba, sesión al `usuario0`, `det.close()`, `h.apagarDirectorio()`. Todo en el `finally`. |
 
-Y las capas que la suite exige: un caso nuevo toma el siguiente entero (165 en adelante), sube `CASOS_ESPERADOS` en
+Y las capas que la suite exige: un caso nuevo toma el siguiente entero (166 en adelante), sube `CASOS_ESPERADOS` en
 `tests/contract/suite.test.mjs` y se cita en la regla y en `invariantes.md`; un gate de contrato nuevo lleva
 `sonda negativa` y lee `canonico(src)` (ADR-0006).
 
@@ -809,14 +809,14 @@ el tab «Mensajería» del detalle.
 ## HU-35 · El comité de crédito que rechaza retira las facturas del deudor y reabre la operación (D4 cerrada el 22-09-2026: retirar Y reabrir, ADR-0015)
 
 ### CP-095 · La bandeja lista «Rechazada»
-- **Criterio**: CA-1 de HU-35 · **Dirección**: positiva · **Capa**: suite + e2e. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0015 punto 1, G-33: «este es el comité de crédito, que opera fuera de la plataforma y da la aceptación o el rechazo»; la API 3 devuelve «Rechazada» por línea de detalle y NEX la consulta en cada refresco; hoy `api3EstadoProceso` sólo «Aprobada» / «Observada», caso 125).
+- **Criterio**: CA-1 de HU-35 · **Dirección**: positiva · **Capa**: suite + e2e. · **Cobertura actual**: suite: caso **165** (la API 3 resuelve «Rechazada» por línea de detalle —residuo 1 de `hashStr(idProceso)`— con observación y sin constituir), implementado el 23-09-2026 (ADR-0015 punto 1, G-33: «este es el comité de crédito, que opera fuera de la plataforma y da la aceptación o el rechazo»); la fila de la bandeja en pantalla sigue NUEVO (e2e). El caso 125 eligió sus ids por el desenlace y ahora conoce los tres.
 - **Precondición**: solicitud inyectada en el caso con `recibirSolicitudLinea` por `evaluate` (molde `18_15_quinquies`; no `e2e-15-bis-bis-a`, cuyo `finally` la retira). El comité real no es alcanzable y **plantar el string no sirve**: «Consultar estados» llama `api3EstadoProceso`, que SOBREESCRIBE `s.estado` con `SEQ[min(3, s.refrescos)]` y decide el fin por `hashStr(idProceso)` (caso 125), así que un `estado: "Rechazada"` forzado se pierde en el siguiente clic. Cuando G-33 agregue la rama «Rechazada» a la API 3, el caso elige un `idProceso` cuyo `hashStr` caiga en ella y pone `s.refrescos = 3` (o pulsa «Consultar estados» tres veces), como CP-098. Si sólo se quiere la bandeja, se aserta SIN pulsar «Consultar estados».
 - **Pasos**: 1) inyectar con el `idProceso` elegido y `refrescos = 3`; 2) `h.irA("Líneas")` → «Solicitudes» → «Consultar estados»; 3) leer la fila.
 - **Resultado esperado**: estado «Rechazada»; en Vigentes la línea deja de decir «Solicitud en curso».
 - **Esbozo e2e**: id `e2e-15-b` (la regla 15 ya tiene `e2e-15` sin sufijo en `16_15.e2e.mjs`; el nuevo toma `-b` y el existente se renombra a `-a` sólo en un commit que toque también ese archivo y la fila 15 de `invariantes.md`) · archivo `35_comite_resolucion.e2e.mjs` · `finally`: retirar el registro, `_cacheCli`, MN-10.
 
 ### CP-096 · El rechazo retira las facturas del deudor sin línea, emite versión con motivo `comite_rechazo` y REABRE la operación revocando la firma; en cero, pérdida
-- **Criterio**: CA-2 y CA-3 de HU-35, fundidos por la decisión (D4 cerrada el 22-09-2026: retirar Y reabrir, ADR-0015) · **Dirección**: positiva (retiro, versión, reapertura) y negativa (no re-asigna contra el estado nuevo; ninguna factura del deudor con línea se toca) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0015 puntos 2 y 3; G-19). Los casos 22 y 23 son el molde de `recortarAsignacion`; el 24, el de la firma revocada (`reabierta`, `aprobacionFormalCliente` falsa). Descartado encoger sin nueva firma: «el cliente firmó un paquete que ya no es el que se va a cursar».
+- **Criterio**: CA-2 y CA-3 de HU-35, fundidos por la decisión (D4 cerrada el 22-09-2026: retirar Y reabrir, ADR-0015) · **Dirección**: positiva (retiro, versión, reapertura) y negativa (no re-asigna contra el estado nuevo; ninguna factura del deudor con línea se toca) · **Capa**: suite. · **Cobertura actual**: caso **165** (`rechazoComiteDecision`: retira s1, quedan c1 y c2, versión 2 con `comite_rechazo` que sólo encoge, vuelve a Oferta con `reabierta` y `aprobacionFormalCliente` falsa, paquete editable; en cero, `committee_reject`) y `regla_65.test.mjs` (`aplicarRechazoComite` escribe la versión, parchea o pierde), implementados el 23-09-2026 (ADR-0015 puntos 2 y 3; G-19). Los casos 22 y 23 fueron el molde de `recortarAsignacion`; el 24, el de la firma revocada. Descartado encoger sin nueva firma: «el cliente firmó un paquete que ya no es el que se va a cursar».
 - **Precondición**: deal firmado (`clienteAcepto: true`, en `otorgamiento` o `cesion`) con dos deudores, uno con línea y otro pendiente de comité (`REQUIERE_COMITE`, solicitud inyectada); el manejador del rechazo alcanzable por nombre con un estado «Rechazada» de la API 3 sobre esa línea de detalle; `n0 = SIM_VERSIONS[id].length`.
 - **Pasos**: 1) aplicar el rechazo; 2) leer `facturasOp`, `SIM_VERSIONS[id]`, `stage`, `reabierta`, `aprobacionFormalCliente(deal)` y la bitácora; 3) repetir sobre un deal cuyo único deudor era el pendiente.
 - **Resultado esperado**: paso 2: sólo las facturas del deudor sin línea salen de `facturasOp` (vuelven a «Documentos disponibles» con el motivo); versión `n0 + 1` con motivo `comite_rechazo` y `linea` que sólo encoge; `stage: "oferta"`, `reabierta` con `ts` y la reserva de la versión aceptada (regla 12), `aprobacionFormalCliente` falsa (regla 1) y la oferta editable como tras «Editar la oferta» (`edicionOperacion`, CP-080) para que el ejecutivo vuelva a publicar; bitácora «Línea rechazada por el comité · N factura(s) retiradas · la operación se reabre para una nueva firma». Paso 3: `stage: "perdida"` con causa específica «línea rechazada por el comité» (`causaPerdidaDeal`, regla 5), `perdidaPor: "sistema"`, tareas cerradas.
@@ -832,7 +832,7 @@ el tab «Mensajería» del detalle.
 - **Esbozo e2e**: id `e2e-44` · archivo `35_comite_resolucion.e2e.mjs` · `finally`: restaurar `repoLineaComite` (clave real `pc_repo_linea_comite`, `crearRepo("linea_comite")`) con `fotoRepos` / `restaurarRepos` (MN-10) y además retirar de `LINEAS_DATA` la fila que `constituirLinea` insertó (`e2e-15` la retira por `lineaId`) y el registro de `api2ListarProcesos()`.
 
 ### CP-133 · «Observada» no retira ni reabre: la operación sigue esperando
-- **Criterio**: CA-4 de HU-35 · **Dirección**: negativa (el control no dispara) · **Capa**: suite. · **Cobertura actual**: NUEVO; el caso 125 fija la secuencia de estados de `api3EstadoProceso` («Observada» entre ellos) pero ningún caso comprueba que la operación firmada no se toque. Es la dirección que bloquea del control de CP-096.
+- **Criterio**: CA-4 de HU-35 · **Dirección**: negativa (el control no dispara) · **Capa**: suite. · **Cobertura actual**: caso **165** («Observada» y «Aprobada» devuelven `aplica: false`, sin versión, sin retiro ni reapertura; una operación girada tampoco se toca), implementado el 23-09-2026. Es la dirección que bloquea del control de CP-096.
 - **Precondición**: el deal firmado de CP-096 con la solicitud en «Observada» (`s.refrescos` en el tramo de `SEQ` que la deja ahí, caso 125); `n0 = SIM_VERSIONS[id].length`.
 - **Pasos**: 1) el manejador que «Consultar estados» llama; 2) leer `facturasOp`, `SIM_VERSIONS[id].length`, `stage`, `reabierta` y `aprobacionFormalCliente(deal)`.
 - **Resultado esperado**: `facturasOp` intacto; `SIM_VERSIONS[id].length === n0`; `stage` sin cambio; `reabierta` ausente; `aprobacionFormalCliente` verdadera; la fila de la bandeja sigue «Observada».
@@ -1021,7 +1021,7 @@ Una fila por historia: sus CP, cuáles están cubiertos hoy (con el id que los c
 | HU-33 | 089–092 | 089 (caso 157), 091 (casos 21, 25: vigente hoy · cambia con ADR-0018, se invierte), 092 (caso 33) | 089, 090, 091, 092 | — | — |
 | HU-34 [definición ajustada] | 093–094 | 093 (casos 55, 52), 094 (casos 55, 52) | — | — | — |
 | HU-42 [ADR-0018; 130 retirado] | 129, 131, 132, 138–142 | 129 (casos 21–23, vía CP-119: vigente hoy · cambia con ADR-0018, se invierte), 131 (casos 21, 25, 157), 141 parcial (casos 25, 95: el veto en la suite) | 138, 139, 140, 141, 142 | 132, 138, 139, 140, 141 | — |
-| HU-35 [D4 cerrada, ADR-0015; 097 retirado] | 095–096, 098, 126, 127, 133 | 098 (casos 150, 125) | 095, 098, 126, 127 | 095, 096, 133 | — |
+| HU-35 [D4 cerrada, ADR-0015; 097 retirado; implementada 23-09-2026] | 095–096, 098, 126, 127, 133 | 095 parcial (caso 165 en la suite; la bandeja por e2e), 096 (caso 165, `regla_65`), 098 (casos 150, 125), 133 (caso 165) | 095, 098, 126, 127 | — | — |
 | HU-36 | 099–102 | 099 (caso 88), 100 (caso 144), 101 (caso 86), 102 (casos 148, 136) | 100, 102 | 099 | — |
 | HU-37 [ADR-0017; implementada 23-09-2026] | 103–105, 128 | 103 (casos 78, 81), 104 (caso 162), 105 (caso 79), 128 parcial (caso 162 en la suite; el chip por e2e) | 128 | — | — |
 | HU-38 | 106–108 | 107 (caso 147), 108 (caso 147) | 107, 108 | 106 | — |
@@ -1088,28 +1088,28 @@ dan vuelta con su mismo id en el commit del ADR: CP-091 (`e2e-6-b`), CP-119 y CP
 Por la capa e2e: `e2e-13-octies-bis-a`, `e2e-13-sexdecies-a/c/d`, `e2e-12-bis-a/b/d`, `e2e-14-a/b/c`, `e2e-29-a/b`,
 `e2e-15-bis-bis-a/b`, `e2e-58`, `e2e-30`, `e2e-13-quaterdecies`. Por la suite: casos 3, 4, 21–33, 36, 38, 47, 52, 55,
 56, 58, 76–81, 83, 85, 86, 88, 99, 100, 105, 106, 110, 112, 114, 117–119, 124–126, 134–136, 140–144, 146–150, 154, 157,
-158, 159, 160, 161, 162, 163, 164 (el 145 —ATR-01, quién autoriza un descuento— no lo cita ningún CP; y `regla_35`, `regla_40`, `regla_transiciones`,
+158, 159, 160, 161, 162, 163, 164, 165 (el 145 —ATR-01, quién autoriza un descuento— no lo cita ningún CP; y `regla_35`, `regla_40`, `regla_transiciones`,
 `regla_estado_pestanas` como texto; `regla_33` vigila la solicitud duplicada, no las mutaciones del paquete). De esos
-76, **40 están cubiertos del todo** —entre ellos los tres que la decisión del usuario dejó **implementados como están**:
+79, **42 están cubiertos del todo** —entre ellos los tres que la decisión del usuario dejó **implementados como están**:
 CP-085 y CP-094 (la clave estable es el versionado, G-13 cerrado) y CP-028 (el gesto explícito, D1), y los dos de HU-42
-que remiten a lo que los casos 21–23 y 157 ya fijan (CP-129, que se da vuelta con ADR-0018, y CP-131)— y **34 son
+que remiten a lo que los casos 21–23 y 157 ya fijan (CP-129, que se da vuelta con ADR-0018, y CP-131)— y **35 son
 parciales** (CP-001, 015, 027, 037, 041, 042, 046, 054, 058, 065, 066, 068, 069, 072, 074, 076, 078, 080, 081, 089, 091,
-092, 098, 099, 100, 102, 107, 108, 109, 115, 116, 118, 128, 134): la conducta está en la suite, en un gate de texto o en un e2e
+092, 095, 098, 099, 100, 102, 107, 108, 109, 115, 116, 118, 128, 134): la conducta está en la suite, en un gate de texto o en un e2e
 vecino y falta el caso en pantalla (HU-01, HU-06, HU-10, HU-14, HU-15, HU-16, HU-18, HU-23, HU-25, HU-26, HU-27, HU-28,
 HU-29, HU-33, HU-35, HU-36, HU-38, HU-39, HU-41), falta la dirección negativa (CP-054, CP-069, CP-074, CP-099), el e2e
 que se cita sólo la cubre bajo condición (CP-066) o sólo mide el aviso sin contar versiones (CP-134). CP-141 es parcial
-en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **57 CP
-son enteramente nuevos**; en total, 91 CP piden al menos un caso nuevo (34 + 57), y 76 + 57 = 133.
+en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **54 CP
+son enteramente nuevos**; en total, 89 CP piden al menos un caso nuevo (35 + 54), y 79 + 54 = 133.
 
 **Nuevos por capa:** **e2e 50** (en 12 archivos nuevos, `27` … `38`, más tres ids que van a archivos existentes,
 `21_29` y `17_15_bis_bis`; 30 de ellos fijan conducta vigente sin gate en pantalla —CP-001, 015, 027, 037, 041, 046,
 058, 065, 066, 068, 069, 072, 074, 076, 078–081, 089–092, 098, 100, 102, 107, 108, 109, 115, 116; CP-091 se escribe
 fijando lo vigente y se da vuelta con ADR-0018— y 20 dependen de un gap o de una decisión ya tomada —CP-013, 034–036,
 042 (el tooltip, nace en rojo), 071, 095, 110, 118 (`moveTo`), 123, 124, 126, 127, 128, 137, 138–142—; CP-111 es sólo
-de suite porque «Avanzar a» no ofrece «Cesión») · **suite 51** (del 165 en adelante; `CASOS_ESPERADOS` sube en cada
+de suite porque «Avanzar a» no ofrece «Cesión») · **suite 48** (del 166 en adelante; `CASOS_ESPERADOS` sube en cada
 commit que los agrega, y se dice) · **contrato 4** (CP-011, CP-031, CP-033, CP-112; todos con sonda negativa
-sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en el motor y en la pantalla (50 + 51 + 4 =
-105 casos para 91 CP).
+sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en el motor y en la pantalla (50 + 48 + 4 =
+102 casos para 89 CP).
 
 **Decisiones del 22 y del 23-09-2026.** Cerradas y aplicadas: **D1** (ADR-0013: CP-028 y CP-030 protegen el gesto
 explícito; CP-031/033 retiran el anuncio; CP-034–036, CP-122 y CP-123 fijan el evento de evaluación, las cinco versiones

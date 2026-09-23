@@ -636,7 +636,7 @@ exacta, sin tolerancia.
 
 **Tipos de solicitud sobre el mismo `POST /solicitudes`** (discriminador `tipo`): **CREAR** (nueva línea — cliente sin línea o empresa nueva; `subtipoModificacion` no aplica), **RENOVAR** (renueva vigencia de la línea actual), **MODIFICAR** (requiere `subtipoModificacion`: AGREGAR_CREDITO, MODIFICAR_VENCIMIENTO, AGREGAR_DEUDORES, REGULARIZAR_DEUDORES, REBAJAR_LINEA, RATIFICAR_EXCESO).
 
-**Estados:** EN_GESTION → EN_ANALISIS_RIESGO → EN_COMITE → APROBADA | OBSERVADA | RECHAZADA.
+**Estados:** EN_GESTION → EN_ANALISIS_RIESGO → EN_COMITE → APROBADA | OBSERVADA | RECHAZADA. **El desenlace viaja también por línea de detalle** (`lineasDetalle[].estado`, ADR-0015): el comité aprueba o rechaza línea a línea, y NEX aplica RECHAZADA al consultarla —retira de la oferta las facturas del deudor cuya línea se rechazó, deja versión y reabre la operación para una nueva firma; si no queda ninguna, la pierde con causa (regla 65)—. `observacion` es obligatoria si OBSERVADA o RECHAZADA.
 **Reglas:** `subtipoModificacion` obligatorio si tipo=MODIFICAR · una línea no admite dos solicitudes en gestión (409) · montos en MM$ · `notaDeudor` escala 1–5 (política de compra ≥ 3,7).
 **Frecuencia:** POST por evento (Solicitar VB); GET al abrir la Bandeja y con "Consultar estados".
 **Autenticación:** por definir con el equipo del sistema de gestión (se sugiere OAuth2 client-credentials).

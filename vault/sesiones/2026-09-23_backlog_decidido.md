@@ -180,3 +180,29 @@ en un esquema v3 con migración autocontenida. La Bandeja dice la hora simulada 
 **Documentos:** spec del inbound (§6 el reloj, §10.4 el job, `topeDocsCorrida` → `topeBandeja`), spec del ciclo (§17),
 spec del curse (M-07 y M-08 implementadas; §15), gaps (G-02, G-03, GD-07 cerrados), HU-08 y HU-09 vigentes,
 CP-019/020/121/022/023/143 (casos 163–164), regla 64 y punteros en 22 y 9-bis, cifras.
+
+## 6 · ADR-0015 · El comité que rechaza retira, versiona y reabre (regla 65, caso 165)
+
+**Qué cambió.** `api3EstadoProceso` resuelve también «Rechazada» (residuo 1 del mock, con `observacion`) y escribe el
+desenlace por línea de detalle; `rechazoComiteDecision` (pura) decide qué facturas salen, la versión `comite_rechazo`
+con la asignación recortada y el patch que reabre —Oferta, `enEdicion`, `reabierta` si había firma—, o la pérdida con
+causa `committee_reject` si no queda factura; `aplicarRechazoComite` escribe, y lo dispara «Consultar estados» de
+Líneas › Solicitudes (`onRechazo`), una vez por solicitud. La bandeja y el detalle de la solicitud pintan «Rechazada».
+
+**Lo que costó / sorpresas.**
+- **El caso 126 cayó** con la primera versión: la API 3 escribía el estado por línea en CADA consulta y el caso compara
+  la huella de una solicitud que viaja entre pestañas quitando sólo lo que «la consulta de estado escribe después»
+  (`estado`, `refrescos`, `tsEstado`). Escribir las líneas mutaba la huella. Se decidió que el estado por línea es
+  el DESENLACE: se escribe sólo cuando el proceso resuelve, que es además lo que el contrato dice.
+- **El mapa de colores de los estados vive en dos componentes** (la bandeja y el detalle de la solicitud): el script
+  de edición y la sonda del gate tuvieron que aplicar a los dos, o «Rechazada» habría quedado con el color de «En
+  gestión» en uno de ellos sin que nada lo dijera.
+- **El caso 125 elegía sus ids por el desenlace del mock** con un helper propio (`finDe`): al sumar un tercer
+  desenlace, su búsqueda del «Aprobada» podía caer en un «Rechazada». Se le enseñó el residuo 1.
+- **El demo verá rechazos de verdad**: el primer proceso de una sesión es `PRC-2601` y su residuo es 1. Con tres
+  «Consultar estados» la solicitud vuelve rechazada, la operación se reabre y el ejecutivo la publica de nuevo. Queda
+  dicho para que no se lea como un error.
+
+**Documentos:** regla 65, punteros en 13, 15 y 5, contrato de la API 3 (Integraciones y swagger), spec del curse (M-29;
+M-18 a medias: la mitad de la verificación va con ADR-0018), gaps (G-19, G-33 cerrados), HU-35 vigente, CP-095/096/133
+(caso 165; CP-126/127 siguen por e2e), cifras.

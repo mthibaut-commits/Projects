@@ -4630,9 +4630,10 @@
       detalle: [{ deudor: "D-15", rutDeudor: null, monto: 37e6, tipoLinea: "puntual" }], deudores: 1, ejecutivo: "Prueba 15", automatica: true });
     // El veredicto final del mock externo sale de `hashStr(idProceso) % 5`: se ELIGE el id (vía la
     // secuencia) para tener uno que resuelve Aprobada y otro Observada, lejos del rango de la demo.
-    const finDe = (n) => (Math.abs(hashStr("PRC-" + (2600 + n))) % 5 === 0) ? "Observada" : "Aprobada";
+    // (desde ADR-0015 el mock también resuelve «Rechazada» —residuo 1—; ese desenlace lo prueba el caso 165)
+    const finDe = (n) => { const r = Math.abs(hashStr("PRC-" + (2600 + n))) % 5; return r === 0 ? "Observada" : r === 1 ? "Rechazada" : "Aprobada"; };
     let nApr = null, nObs = null;
-    for (let n = 90000; n < 90400 && (nApr === null || nObs === null); n++) { if (finDe(n) === "Observada") { if (nObs === null) nObs = n; } else if (nApr === null) nApr = n; }
+    for (let n = 90000; n < 90400 && (nApr === null || nObs === null); n++) { if (finDe(n) === "Observada") { if (nObs === null) nObs = n; } else if (finDe(n) === "Aprobada" && nApr === null) nApr = n; }
     limpiarLinea(RUT_A); limpiarLinea(RUT_O);
 
     // (a) INYECTAR escribe el registro, no el veredicto: «En gestión», sin constituir, cartera intacta
@@ -7947,6 +7948,73 @@
     ok("164 al corte la oportunidad del inbound sin oferta se elimina y la que tiene oferta no se toca, cualquiera sea su etapa; al reinicio vuelve como oportunidad nueva con id propio y referencia",
        eliminaOk && bordeOk && eventoOk && idOk && vacioOk,
        `elimina X y E (sin oferta) y deja S/P/O/G/M intactas ${eliminaOk} · la simulada antes del corte sobrevive y la otra no ${bordeOk} · evento con referencia y -R1 ${eventoOk} · ids -R1/-R2/-R10 ${idOk} · vacío/manual ${vacioOk}`);
+  }
+
+  {
+    // 165 · EL COMITÉ DE CRÉDITO QUE RECHAZA (ADR-0015, regla 65): la API 3 devuelve «Rechazada» por línea de detalle;
+    //       el rechazo retira de la oferta las facturas del deudor cuya línea se rechazó, emite versión con motivo
+    //       `comite_rechazo` (la asignación sólo encoge) y REABRE la operación revocando la firma; si no queda ninguna
+    //       factura, la operación se pierde con causa «Línea rechazada por el comité». «Observada» no toca nada.
+    //       CP-095, CP-096 y CP-133. La decisión es pura; el gate `regla_65.test.mjs` fija que «Consultar estados» la aplica.
+    const nD = (r) => nomDe(r);
+    const fs165 = [fac("c1", LB[0], 20), fac("c2", LB[0], 10), fac("s1", LB[1], 30)];
+    const deal = { id: "T-165", rutEmisor: "76.111.111-1", cliente: "Cliente 165", stage: "otorgamiento", clienteAcepto: true, cierreFirmado: true,
+                   ofertaCerrada: true, ofertaComunicada: true, negocioNum: "N-165", facturasOp: fs165, facturas: 3, monto: 60 * MMF,
+                   deudores: [{ name: nD(LB[1]), facturas: 1, monto: 30 * MMF }, { name: nD(LB[0]), facturas: 2, monto: 30 * MMF }], deudor: nD(LB[1]),
+                   facturasDisponibles: [], historialContacto: [] };
+    const linea0 = snapLinea(asignarLineas(fs165, deal.rutEmisor));
+    const versiones = [{ v: 1, rev: 0, ts: "t0", origen: "Simulación", linea: linea0 }];
+    const solDe165 = (estado, detalle) => ({ idProceso: "PRC-T165", rut: deal.rutEmisor, cliente: deal.cliente, estado, origen: { dealId: deal.id },
+      detalle: (detalle || [{ deudor: nD(LB[1]), rutDeudor: LB[1], monto: 30 * MMF, tipoLinea: "puntual" }]).map((d) => ({ ...d, estado })) });
+    const foto = JSON.stringify(deal);
+    // (a) RECHAZADA: se retira la del deudor sin línea, quedan las dos del otro, versión n+1 con motivo y asignación que encoge,
+    //     y la operación vuelve a Oferta reabierta: la firma queda revocada y el paquete editable, para volver a publicar.
+    const dec = rechazoComiteDecision(deal, solDe165("Rechazada"), versiones);
+    const ids = (a) => (a || []).map((f) => f.id).join(",");
+    const patched = dec.aplica && !dec.perdida ? { ...deal, ...dec.patch } : null;
+    const retiroOk = dec.aplica === true && dec.perdida === false && ids(dec.retiradas) === "s1" && ids(dec.quedan) === "c1,c2"
+      && !!patched && ids(patched.facturasOp) === "c1,c2" && patched.facturas === 2 && patched.monto === 30 * MMF
+      && (patched.facturasDisponibles || []).some((f) => f.id === "s1" && f.motivoRetiro === "comite_rechazo")
+      && patched.deudores.length === 1 && patched.deudores[0].name === nD(LB[0]) && patched.deudores[0].facturas === 2;
+    const reabreOk = !!patched && patched.stage === "oferta" && !!patched.reabierta && patched.reabierta.motivo === "comite_rechazo" && !!patched.enEdicion
+      && aprobacionFormalCliente(deal) === true && aprobacionFormalCliente(patched) === false && ofertaCerradaVigente(patched) === false
+      && /Línea rechazada por el comité/.test(patched.status || "");
+    const v = dec.version;
+    const versionOk = !!v && v.v === 2 && v.rev === 1 && v.motivo === "comite_rechazo" && /rechazada/.test(v.origen || "")
+      && v.linea.facturas.length === 2 && v.linea.facturas.every((f) => f.id !== "s1") && mmRound(v.linea.cursable) <= mmRound(linea0.cursable)
+      && JSON.stringify(deal) === foto;   // pura: no mutó el negocio
+    // (b) EN CERO, PÉRDIDA: si el único deudor era el rechazado, no queda nada y la causa es específica (regla 5).
+    const deal2 = { ...deal, id: "T-165b", facturasOp: [fac("s9", LB[1], 30)], facturas: 1, monto: 30 * MMF };
+    const dec2 = rechazoComiteDecision(deal2, solDe165("Rechazada"), versiones);
+    const perdidaOk = dec2.aplica === true && dec2.perdida === true && ids(dec2.retiradas) === "s9" && dec2.quedan.length === 0
+      && dec2.closeReason === "committee_reject" && closeReasonLabel("committee_reject") === "Línea rechazada por el comité"
+      && CLOSE_REASONS.find((x) => x.k === "committee_reject").result === "lost";
+    // (c) DIRECCIÓN QUE BLOQUEA: «Observada» (y «Aprobada») no retira, no versiona, no reabre; y una operación girada tampoco se toca.
+    const decO = rechazoComiteDecision(deal, solDe165("Observada"), versiones);
+    const decA = rechazoComiteDecision(deal, solDe165("Aprobada"), versiones);
+    const decG = rechazoComiteDecision({ ...deal, stage: "giro" }, solDe165("Rechazada"), versiones);
+    const bloqueaOk = decO.aplica === false && decO.motivo === "sin_rechazo" && decA.aplica === false && decG.aplica === false && decG.motivo === "terminal"
+      && versiones.length === 1;
+    // (d) LA API 3 RESUELVE «Rechazada» por línea de detalle (residuo 1 del mock), sin constituir nada y con observación.
+    const lista = api2ListarProcesos(), seq0 = SOLIC_SEQ, nAntes = lista.length, RUT_R = "76.016.016-5";
+    const finDe165 = (n) => Math.abs(hashStr("PRC-" + (2600 + n))) % 5;
+    let nRec = null;
+    for (let n = 91000; n < 91400 && nRec === null; n++) if (finDe165(n) === 1) nRec = n;
+    SOLIC_SEQ = nRec - 1;
+    const idR = api1Inyeccion({ rut: RUT_R, cliente: "Prueba 165", tipo: "modificar", subtipo: "agregar_deudores", totalPropuesto: 50e6, propFactoring: 50e6,
+      propGlobal: 0, propConfirming: 0, pedido: 50e6, detalle: [{ deudor: "D-165", rutDeudor: null, monto: 50e6, tipoLinea: "puntual" }], deudores: 1, ejecutivo: "Prueba 165", automatica: true });
+    const regR = lista.find((x) => x && x.idProceso === idR);
+    regR.refrescos = 3;
+    const eR = api3EstadoProceso(idR);
+    const apiOk = eR === "Rechazada" && regR.estado === "Rechazada" && regR.detalle[0].estado === "Rechazada" && typeof regR.observacion === "string" && regR.observacion.length > 10
+      && !regR.constituida && !LINEAS_DATA.some((x) => x.rut === RUT_R);
+    const iR = lista.findIndex((x) => x && x.idProceso === idR); if (iR >= 0) lista.splice(iR, 1);
+    SOLIC_SEQ = seq0;
+    const restauradoOk = lista.length === nAntes && SOLIC_SEQ === seq0;
+    ok("165 el comité que rechaza retira las facturas del deudor, emite versión que sólo encoge y reabre la operación revocando la firma; en cero se pierde con causa; «Observada» no toca nada",
+       retiroOk && reabreOk && versionOk && perdidaOk && bloqueaOk && apiOk && restauradoOk,
+       `retira s1 y quedan c1,c2 ${retiroOk} · vuelve a Oferta con reabierta y firma revocada ${reabreOk} · versión 2 comite_rechazo, ${v ? v.linea.facturas.length : "?"} facturas ${versionOk}`
+       + ` · en cero pérdida «committee_reject» ${perdidaOk} · Observada/Aprobada/girada no tocan ${bloqueaOk} · API 3 «Rechazada» por línea ${apiOk} · restaurado ${restauradoOk}`);
   }
 
   console.log(out.join("\n"));

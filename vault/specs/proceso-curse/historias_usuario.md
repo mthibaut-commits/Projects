@@ -441,8 +441,8 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-35 · El rechazo del comité retira las facturas del deudor y reabre la operación para una nueva firma
 - **Como** Comité de líneas (comité de crédito, externo a la plataforma), **quiero** que mi rechazo de una línea puntual llegue a NEX y deje a la operación en un estado definido, **para** que no quede firmada sobre una línea que no existe.
-- **Estado**: por implementar (ADR-0015). D4 cerrada el 22-09-2026: ni encoger con la firma vigente ni sólo reabrir — se retiran las facturas del deudor Y se reabre la operación para que el cliente firme de nuevo.
-- **Reglas**: 15, 13, 33, 1, 5 · **Cláusulas**: M-29, M-18 · **Gaps**: G-19, G-33.
+- **Estado**: vigente (implementada el 23-09-2026: regla 65, caso 165, `regla_65.test.mjs`; la pantalla del rechazo sigue por e2e, CP-126 y CP-127). D4 cerrada el 22-09-2026: ni encoger con la firma vigente ni sólo reabrir — se retiran las facturas del deudor Y se reabre la operación para que el cliente firme de nuevo.
+- **Reglas**: 15, 13, 33, 1, 5, 65 · **Cláusulas**: M-29, M-18 · **Gaps**: G-19, G-33 (implementados).
 - **Criterios de aceptación**:
   - CA-1 · Dado una solicitud en la bandeja · Cuando el sistema externo la rechaza · Entonces la API de estado del proceso (API 3) devuelve «Rechazada» por línea de detalle y Líneas › Solicitudes la lista «Rechazada» (hoy sólo «Aprobada» / «Observada»).
   - CA-2 · Dado la operación firmada con esa solicitud · Cuando llega el rechazo de una línea puntual · Entonces las facturas del deudor que dependían de ella se retiran de la oferta, se emite versión con el motivo, la operación vuelve a «Negociación» con `reabierta` revocando la firma (regla 1), y el ejecutivo vuelve a publicar el paquete que queda para que el cliente lo firme.
@@ -560,11 +560,11 @@ Cada una de las 41 cláusulas y de los 36 gaps aparece al menos una vez.
 | G-31 · G-32 · G-33 · G-34 · G-35 | HU-05 (implementada: regla 61) · HU-21 · HU-35 · HU-37 · HU-32 |
 | G-36 | HU-42 (y HU-33 CA-3, vigente hoy · cambia con ADR-0018) |
 
-**Por estado (42 historias):** 25 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
+**Por estado (42 historias):** 26 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
 HU-29, HU-33 —con su CA-3 vigente hoy · cambia con ADR-0018— y HU-41) y 9 por definición ajustada el 22 y 23-09-2026
-(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34) y 6 implementadas el 23-09-2026 (HU-03, ADR-0014: regla 60, caso 159; HU-05, regla 61, caso 160; HU-25, regla 62, caso 161; HU-37, ADR-0017: regla 63, caso 162; HU-08 y HU-09, ADR-0019: regla 64, casos 163–164)— · 17 por implementar (HU-02, HU-04,
+(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34) y 7 implementadas el 23-09-2026 (HU-03, ADR-0014: regla 60, caso 159; HU-05, regla 61, caso 160; HU-25, regla 62, caso 161; HU-37, ADR-0017: regla 63, caso 162; HU-08 y HU-09, ADR-0019: regla 64, casos 163–164; HU-35, ADR-0015: regla 65, caso 165)— · 16 por implementar (HU-02, HU-04,
 HU-07, HU-12, HU-13 ADR-0013, HU-17, HU-19, HU-21 ADR-0013, HU-27, HU-30, HU-32
-ADR-0016, HU-35 ADR-0015, HU-36, HU-38, HU-39, HU-40, HU-42 ADR-0018) · 0 pendientes de confirmar.
+ADR-0016, HU-36, HU-38, HU-39, HU-40, HU-42 ADR-0018) · 0 pendientes de confirmar.
 
 **Preguntas abiertas dentro de historias que ya tienen estado:** ninguna desde el 23-09-2026.
 
