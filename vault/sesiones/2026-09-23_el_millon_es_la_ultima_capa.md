@@ -2,7 +2,7 @@
 type: sesion
 title: "Sesión 2026-09-23 — El millón es la última capa (regla 60)"
 description: "El usuario pidió que las comparaciones fueran siempre en pesos. Medido: ninguna comparación de la lógica estaba en millones —eso lo cerraron el 14-09 y el 17-09—, pero quedaban cuatro puertas abiertas: un mensaje al cliente que multiplicaba por un millón, tres layouts que declaraban campos en MM$ (uno de ellos contradiciendo a su propio generador por mil), y una notación fuera de la escala única. Regla 60, con auditar_unidades cableado y su patrón (d)"
-tags: [sesion, unidades, contrato, regla-47]
+tags: [sesion, unidades, contrato, regla-60]
 timestamp: 2026-09-23T14:00:00Z
 feature: null
 ---

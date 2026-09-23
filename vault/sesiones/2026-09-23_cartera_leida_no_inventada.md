@@ -2,7 +2,7 @@
 type: sesion
 title: "Sesión 2026-09-23 (cierre) — La cartera comercial se lee, no se inventa (regla 62)"
 description: "Los dos generadores que quedaban dentro de la app sorteaban el volumen del cliente, su competidor y sus «malos deudores». No era sólo suciedad: el volumen salía en una escala que nadie declaraba y cuatro KPI de Reportes lo pasan por fmtMMc, así que mostraban del orden de M$5 donde va la cartera de 500 clientes. Los cuatro campos pasan a leerse del A11 y de la nota de corte; el fallback sintético de 80 empresas se retira entero; y las series de referencia del mercado pasan a pesos"
-tags: [sesion, unidades, generador, regla-49]
+tags: [sesion, unidades, generador, regla-62]
 timestamp: 2026-09-23T16:00:00Z
 feature: null
 ---

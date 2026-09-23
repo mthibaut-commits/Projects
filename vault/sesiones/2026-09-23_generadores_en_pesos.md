@@ -2,7 +2,7 @@
 type: sesion
 title: "Sesión 2026-09-23 (tarde) — Todo generador produce en pesos (regla 61)"
 description: "El usuario reemplazó la decisión de la mañana: el sufijo _M (miles) no se queda. Veinte campos de cuatro activos viajaban en miles, cuantizados de a $1.000, y dos de ellos entran en criterios que deciden (C02 y el predictor de verificación). Los cuatro generadores pasan a pesos, veinte multiplicaciones por mil desaparecen del fuente, tres specs suben de versión mayor y el caso 115 se re-ancla a una exigencia más fuerte"
-tags: [sesion, unidades, generador, regla-48]
+tags: [sesion, unidades, generador, regla-61]
 timestamp: 2026-09-23T15:00:00Z
 feature: null
 ---
