@@ -2916,7 +2916,8 @@ function fechasDocumento(f) {
   return { emision: em, vencimiento: f.fchVenc || diaISO(em, plazo) };
 }
 // Antigüedad del documento en días: se MIDE contra su emisión y la fecha de corte del activo. Es lo
-// que decide si una factura entra en la ventana del libro y si es demasiado nueva para publicar.
+// que decide si una factura entra en la ventana del libro, si es demasiado nueva para publicar y, desde la
+// regla 61, si es demasiado vieja para ser candidata del inbound.
 const diasDesdeEmision = (f) => Math.max(0, Math.round((corteMs() - Date.parse(fechasDocumento(f).emision + "T00:00:00")) / 86400000));
 const fmtFechaDoc = (iso) => (iso ? new Date(Date.parse(iso + "T00:00:00")).toLocaleDateString("es-CL") : "—");
 // Plazo en días de una fila del activo: la diferencia entre sus dos fechas. El inbound lo fijaba en
@@ -4134,7 +4135,9 @@ function streamDesdeDTE(dte) {
       buenPagador: tDeu === "Lista Blanca",
       siiSync: true,
       contactoVerificado: esCliente,
-      diasEmision: 1,
+      // La antigüedad del DOCUMENTO contra el corte (regla 13-ter), que es la que el filtro aplica (regla 61).
+      // Traía un 1 fijo y la Bandeja decía «1d» para todas las facturas.
+      diasEmision: diasDesdeEmision(fac),
       esCliente,
       esProveedor: !esCliente,
       cliente: esCliente,
@@ -4356,15 +4359,23 @@ const cedidaAFactoringAjeno = (f) => {
   const ces = cesionDeFactura((f && f.rutEmisor) || fac.rutEmisor, fac.folio);
   return !!(ces && !ces.nuestra);
 };
+// Antigüedad del evento del stream, medida contra el corte del activo (regla 13-ter): el documento va en
+// `facturasOp[0]` —con su `fchEmis`— y la raíz sólo lleva la antigüedad estampada, así que se mira el documento primero.
+const diasEmisionEvento = (f) => diasDesdeEmision((f && f.facturasOp && f.facturasOp[0]) || f);
+// ¿Más vieja que lo que el tenant va a buscar? El tope es política del factoring (`antiguedadMaxDias`, Configuración ›
+// Operación; 20 días por defecto) y se lee con `pol`, nunca incrustado (regla 9-bis): quinta condición de «Buena
+// factura» (regla 61). «No más de N» incluye el día N.
+const superaAntiguedad = (f) => diasEmisionEvento(f) > pol("antiguedadMaxDias", 20);
 // ---- Motor de clasificación: ¿la factura califica alguna regla activa? ----
 const CRITERIO_PRED = {
   // Criterios a nivel FACTURA: una factura ELEGIBLE para inbound es a crédito, no reclamada, sin nota de
-  // crédito, no cedida a un factoring ajeno (regla 60) y con deudor que abre oportunidad: Lista Blanca, Autorizado o histórico del último año
+  // crédito, no cedida a un factoring ajeno (regla 60), emitida hace no más de `antiguedadMaxDias` (regla 61) y con
+  // deudor que abre oportunidad: Lista Blanca, Autorizado o histórico del último año
   // (con BICE = CAT1, con otro factor = CAT4). Los deudores "Otro" sin historia quedan excluidos.
   // Deudor que abre oportunidad: el que está en una lista (bucket elegible) O el que alcanza la Nota
   // de corte. Antes sólo contaba el bucket, que por construcción excluye a los no listados — así que
   // la lista ND>4,2 no podía capturar nada aunque el deudor tuviera nota 4,6.
-  "Buena factura": (f) => f.credito && !f.reclamada && !f.notaCredito && !cedidaAFactoringAjeno(f) && deudorAbreOportunidad(f),
+  "Buena factura": (f) => f.credito && !f.reclamada && !f.notaCredito && !cedidaAFactoringAjeno(f) && !superaAntiguedad(f) && deudorAbreOportunidad(f),
   "Deudor elegible": (f) => deudorAbreOportunidad(f),
   Crédito: (f) => f.credito,
   // TIPO DE DEUDOR de la prospección: tres poblaciones, no cinco. La lista Prime —que junta Lista
@@ -4399,6 +4410,8 @@ function criteriosDesdeFactura(f) {
   const c = [];
   // La cesión ajena se nombra igual que el bloqueo de riesgo: «otro se la llevó» explica por qué no se captura.
   if (cedidaAFactoringAjeno(f)) c.push("Cedida a otro factoring (excluida)");
+  // La antigüedad se nombra con el tope VIGENTE del tenant: es lo que el ejecutivo puede ir a cambiar a Configuración.
+  else if (superaAntiguedad(f)) c.push(`Antigüedad > ${pol("antiguedadMaxDias", 20)} días (excluida)`);
   else if (f.credito && !f.reclamada && !f.notaCredito && deudorAbreOportunidad(f)) c.push("Buena factura");
   // Un deudor puede estar en más de una lista —un histórico Security suele pasar también el corte de
   // nota—, así que el perfil nombra la MÁS ESPECÍFICA: primero las listas por pertenencia y al final
@@ -4695,6 +4708,10 @@ const CFG_OPER_BASE = {
   lineaMinima: 10e6,
   vigenciaLineaMeses: 12,
   ventanaLibroDias: 60, // ventana del libro de ventas para buscar facturas candidatas
+  // Antigüedad máxima (días desde la emisión, contra el corte del activo) con que una factura es candidata del
+  // inbound: más vieja que esto no se va a buscar, porque nadie la va a comprar (regla 61). Quinta condición de
+  // «Buena factura»; «no más de 20» incluye el día 20.
+  antiguedadMaxDias: 20,
   // — Marca (por tenant) —
   // NEX es la plataforma; el factoring es el tenant, y la marca que ve su ejecutivo es la SUYA, no la
   // nuestra. Security va con el logotipo «Factoring Security de BICE» y su azul corporativo; NEX queda
@@ -34396,6 +34413,17 @@ function CfgOperacion({ cfgOper, setCfgOper }) {
         <CfgCampo l="Ventana del libro de ventas" hint="Días hacia atrás en que se buscan facturas candidatas del cliente.">
           <div className="flex items-center gap-2">
             <input {...num("ventanaLibroDias", 7, 365)} />
+            <span className="t10" style={{ color: C.faint }}>
+              días
+            </span>
+          </div>
+        </CfgCampo>
+        <CfgCampo
+          l="Antigüedad máxima de la factura"
+          hint="Días desde la emisión con que una factura todavía es candidata del inbound: más vieja que esto no se va a buscar. «No más de N» incluye el día N."
+        >
+          <div className="flex items-center gap-2">
+            <input {...num("antiguedadMaxDias", 1, 365)} />
             <span className="t10" style={{ color: C.faint }}>
               días
             </span>

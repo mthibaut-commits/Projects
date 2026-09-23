@@ -92,7 +92,7 @@ selector y **por qué el sustituto es legítimo** cuando el disparador real no s
 | **MN-09** | Ticket crafteado | `abrirConTicket(h, extra, usuario)` (`e2e-30`): `emitirTicketDetalle("deal", id, usuario, { deal: {...payload.deal, ...últimoPatch, ...extra}, usuario, tab: null, ts })` en el tubo y `ctx.newPage().goto(url + "?t=" + uuid)`. Sirve para menús y compuertas en un estado que el flujo no da rápido (publicada, otra sesión); no para el veredicto (la foto no vuelve al tubo). **Prerrequisito**: `abrirConTicket` toma el PRIMER ticket `tipo: "deal"` de `TICKETS_EMITIDOS` y lanza «no encuentro el ticket del detalle … ¿se abrió el detalle desde el tubo?» si no hay ninguno; por tanto exige un MN-02 previo en la misma sesión (dentro del caso o del archivo) y craftea ESE deal, no uno elegido por id. |
 | **MN-10** | Restauración | `fotoRepos` / `restaurarRepos` de las claves `pc_repo_*` (`e2e-29`, `e2e-15-bis-bis`; barren todo `pc_repo_*`). Las claves reales las arma `crearRepo(nombre)` como `"pc_repo_" + nombre` con forma `{[tenantId]: {[id]: valor}}`: `pc_repo_otorgamiento_visado` (`repoVisado`), `pc_repo_verificacion_telefonica` (`repoVerifTel`), `pc_repo_giro_asignacion` (`repoGiro`), `pc_repo_linea_comite` (`repoLineaComite`), `pc_repo_simulacion_version` (`repoSimVersions`), `pc_repo_solicitud_comite` (`repoSolicitudComite`), `pc_repo_factura_no_confirmada` (`repoNoConfirmadas`, el veto de CP-091; regla 6). En los CP se lee por `repoX.get(id)` desde `evaluate`, nunca por una clave abreviada. Retiro de la solicitud en `api2ListarProcesos()` y de `SOLIC_SEQ`, borrado de `fs_curse_<neg>`, filtro rápido al que estaba, sesión al `usuario0`, `det.close()`, `h.apagarDirectorio()`. Todo en el `finally`. |
 
-Y las capas que la suite exige: un caso nuevo toma el siguiente entero (160 en adelante), sube `CASOS_ESPERADOS` en
+Y las capas que la suite exige: un caso nuevo toma el siguiente entero (161 en adelante), sube `CASOS_ESPERADOS` en
 `tests/contract/suite.test.mjs` y se cita en la regla y en `invariantes.md`; un gate de contrato nuevo lleva
 `sonda negativa` y lee `canonico(src)` (ADR-0006).
 
@@ -171,13 +171,13 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (160 en a
 - **Pasos**: 1) gate que lee el fuente como texto y comprueba que «Sin acuse» aparece sólo como VALOR del campo del A1 y no como sorteo de `facturasDeCandidata` (sonda negativa plantando el sorteo); 2) `node GeneradorDatos/generar.js` reproduce el activo byte a byte (`generador.test.mjs` sigue verde); 3) suite: `facturaDeDTE` sobre una fila con cada valor.
 - **Resultado esperado**: el gate pasa y su sonda cae; el generador sigue en punto fijo; la factura trae el acuse tal como viene en el A1, sin derivarlo (regla 13-ter: lo que trae el documento no se recalcula en pantalla).
 
-## HU-05 · Criterio de candidatura por antigüedad de la emisión (decidido el 22-09-2026: no más de 20 días, configurable; tags del emisor y cesión previa descartados)
+## HU-05 · Criterio de candidatura por antigüedad de la emisión (decidido el 22-09-2026: no más de 20 días, configurable; tags del emisor y cesión previa descartados · implementado el 23-09-2026: regla 61, caso 160)
 
 ### CP-012 · «Emitida hace no más de 20 días» deja entrar la de 20 y excluye la de 21, y la cuenta como excluida por antigüedad
-- **Criterio**: CA-1 de HU-05 · **Dirección**: negativa (excluye) y positiva (la reciente entra), en el borde · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (G-31, sin ADR: «necesitamos implementar un criterio para ir a buscar facturas que tengan cierta antigüedad, ejemplo no más de 20 días desde su emisión, con eso basta»). El criterio se escribe sobre `FchEmis`, que es dato del documento (regla 13-ter).
-- **Precondición**: `CRITERIO_PRED` con el criterio de antigüedad y el parámetro del tenant en su valor por defecto (20 días; nombre por definir en `CFG_OPER_BASE`, GD-07); `hoy` inyectado (el caso 93 adelanta `Date.now` sin tocar el activo) y tres facturas con `FchEmis` a 5, 20 y 21 días.
-- **Pasos**: 1) evaluar `facturaCalifica` sobre las tres; 2) leer el detalle de exclusión de la tarjeta (`capacidadDeudores` / `chipTramo` por `evaluate`).
-- **Resultado esperado**: entran la de 5 y la de 20 días («no más de 20» incluye el día 20); la de 21 sale con motivo «antigüedad». Nace en rojo: hoy ningún criterio mira la fecha (el descarte < 8 días ocurre al cerrar, `intentarCerrar`, y es otra cosa).
+- **Criterio**: CA-1 de HU-05 · **Dirección**: negativa (excluye) y positiva (la reciente entra), en el borde · **Capa**: suite. · **Cobertura actual**: caso **160** (implementado el 23-09-2026, regla 61; G-31, sin ADR: «necesitamos implementar un criterio para ir a buscar facturas que tengan cierta antigüedad, ejemplo no más de 20 días desde su emisión, con eso basta»). El criterio se escribe sobre `FchEmis`, que es dato del documento (regla 13-ter).
+- **Precondición**: `CRITERIO_PRED` con el criterio de antigüedad y el parámetro del tenant en su valor por defecto (`antiguedadMaxDias: 20` en `CFG_OPER_BASE`); la antigüedad se mide contra el corte del activo (`corteDTE`, regla 13-ter), así que no hace falta inyectar `hoy`; tres eventos con el documento (`facturasOp[0].fchEmis`) a 5, 20 y 21 días y la raíz a 1 día, para fijar que el filtro mira el documento.
+- **Pasos**: 1) evaluar «Buena factura» y `clasificarFactura` sobre las tres; 2) leer el perfil de la Bandeja (`criteriosDesdeFactura`).
+- **Resultado esperado**: entran la de 5 y la de 20 días («no más de 20» incluye el día 20); la de 21 sale con el perfil «Antigüedad > 20 días (excluida)». Nació en rojo el 23-09-2026 —ningún criterio miraba la fecha; el descarte < 8 días al cerrar, `intentarCerrar`, es otra cosa— y quedó verde con `superaAntiguedad`.
 
 ### CP-013 · Un criterio desconocido no califica nada y se marca no ejecutable
 - **Criterio**: CA-3 de HU-05 · **Dirección**: negativa (hoy califica todo: rojo) · **Capa**: suite + e2e. · **Cobertura actual**: NUEVO. G-07 quedó cerrado el 22-09-2026 y el criterio desconocido NO fue objeto de la decisión: el caso se conserva como control de configuración (T2, regla 35 como molde: lo no ejecutable se nombra y no bloquea) y no afirma ninguna decisión del usuario.
@@ -190,10 +190,10 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (160 en a
 - La «lista de emisores con tags» y la cesión previa quedaron **descartadas** como criterios del inbound (M-10, segunda vuelta: «con eso basta»; G-07 cerrado). El criterio que sí entra es la antigüedad (CP-012, CP-120). El id no se reutiliza.
 
 ### CP-120 · El tope de antigüedad es del tenant: bajado a 10 días la de 15 sale; el valor del código no manda
-- **Criterio**: CA-2 de HU-05 (decisión del 22-09-2026 sobre M-10: antigüedad máxima **configurable**, 20 días por defecto) · **Dirección**: negativa (con 10 la de 15 sale) y positiva (con 20 entra) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (G-31). Molde: caso 90 («lo que el tenant configura lo aplica el motor»); CP-006 es el mismo control para el tope de la corrida.
-- **Precondición**: la de CP-012 con una factura a 15 días; `aplicarCfgActiva({ …, <antigüedadMaxDias>: 10 })` (nombre por definir, GD-07) y luego `20`.
-- **Pasos**: 1) evaluar con 10; 2) evaluar con 20; 3) evaluar con el parámetro ausente.
-- **Resultado esperado**: fuera, dentro, y con el parámetro ausente rige el valor por defecto (20): nunca un número escrito en el criterio.
+- **Criterio**: CA-2 de HU-05 (decisión del 22-09-2026 sobre M-10: antigüedad máxima **configurable**, 20 días por defecto) · **Dirección**: negativa (con 10 la de 15 sale) y positiva (con 20 entra) · **Capa**: suite. · **Cobertura actual**: caso **160** (implementado el 23-09-2026, regla 61; G-31). Molde: caso 90 («lo que el tenant configura lo aplica el motor»); CP-006 es el mismo control para el tope de la corrida.
+- **Precondición**: la de CP-012 con una factura a 15 días; `aplicarCfgActiva({ …, antiguedadMaxDias: 10 })` y luego `30`; para «ausente», `CFG_ACTIVA` sin la clave (sin `aplicarCfgActiva`, que la rellenaría desde `CFG_OPER_BASE`).
+- **Pasos**: 1) evaluar con 10; 2) evaluar con 30; 3) evaluar con el parámetro ausente.
+- **Resultado esperado**: fuera (la de 15), dentro (la de 21), y con el parámetro ausente rige el 20 de `CFG_OPER_BASE`: nunca un número propio del criterio.
 
 ## HU-06 · Segmentación Prime / Otros y join con líneas: un join en pantalla (definición ajustada 22-09-2026: «es un join, no es parte del inbound»)
 
@@ -990,7 +990,7 @@ Una fila por historia: sus CP, cuáles están cubiertos hoy (con el id que los c
 | HU-02 | 005–006 | — | — | 005, 006 | — |
 | HU-03 [D6 cerrada, ADR-0014; implementada 23-09-2026] | 007–009 | 007 (caso 159), 008 (casos 159, 95), 009 (casos 99, 105) | — | — | — |
 | HU-04 [el acuse se muestra y no filtra, 23-09-2026] | 010–011 | — | — | 010, 011 | 011 |
-| HU-05 [014 retirado] | 012–013, 120 | — | 013 | 012, 013, 120 | — |
+| HU-05 [014 retirado; implementada 23-09-2026] | 012–013, 120 | 012 (caso 160), 120 (caso 160) | 013 | 013 | — |
 | HU-06 [definición ajustada] | 015–016 | 015 parcial (caso 100: el join en pantalla; el chip no se lee) | 015 | 016 | — |
 | HU-07 | 017–018 | — | — | 017, 018 | — |
 | HU-08 [el corte por reloj, ADR-0019] | 019–020, 121 | — | — | 019, 020, 121 | 019 |
@@ -1088,9 +1088,9 @@ dan vuelta con su mismo id en el commit del ADR: CP-091 (`e2e-6-b`), CP-119 y CP
 Por la capa e2e: `e2e-13-octies-bis-a`, `e2e-13-sexdecies-a/c/d`, `e2e-12-bis-a/b/d`, `e2e-14-a/b/c`, `e2e-29-a/b`,
 `e2e-15-bis-bis-a/b`, `e2e-58`, `e2e-30`, `e2e-13-quaterdecies`. Por la suite: casos 3, 4, 21–33, 36, 38, 47, 52, 55,
 56, 58, 76–81, 83, 85, 86, 88, 99, 100, 105, 106, 110, 112, 114, 117–119, 124–126, 134–136, 140–144, 146–150, 154, 157,
-158 (el 145 —ATR-01, quién autoriza un descuento— no lo cita ningún CP; y `regla_35`, `regla_40`, `regla_transiciones`,
+158, 159, 160 (el 145 —ATR-01, quién autoriza un descuento— no lo cita ningún CP; y `regla_35`, `regla_40`, `regla_transiciones`,
 `regla_estado_pestanas` como texto; `regla_33` vigila la solicitud duplicada, no las mutaciones del paquete). De esos
-62, **29 están cubiertos del todo** —entre ellos los tres que la decisión del usuario dejó **implementados como están**:
+66, **31 están cubiertos del todo** —entre ellos los tres que la decisión del usuario dejó **implementados como están**:
 CP-085 y CP-094 (la clave estable es el versionado, G-13 cerrado) y CP-028 (el gesto explícito, D1), y los dos de HU-42
 que remiten a lo que los casos 21–23 y 157 ya fijan (CP-129, que se da vuelta con ADR-0018, y CP-131)— y **33 son
 parciales** (CP-001, 015, 027, 037, 041, 042, 046, 054, 058, 065, 066, 068, 069, 072, 074, 076, 078, 080, 081, 089, 091,
@@ -1098,18 +1098,18 @@ parciales** (CP-001, 015, 027, 037, 041, 042, 046, 054, 058, 065, 066, 068, 069,
 vecino y falta el caso en pantalla (HU-01, HU-06, HU-10, HU-14, HU-15, HU-16, HU-18, HU-23, HU-25, HU-26, HU-27, HU-28,
 HU-29, HU-33, HU-35, HU-36, HU-38, HU-39, HU-41), falta la dirección negativa (CP-054, CP-069, CP-074, CP-099), el e2e
 que se cita sólo la cubre bajo condición (CP-066) o sólo mide el aviso sin contar versiones (CP-134). CP-141 es parcial
-en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **69 CP
-son enteramente nuevos**; en total, 102 CP piden al menos un caso nuevo (33 + 69), y 64 + 69 = 133.
+en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **67 CP
+son enteramente nuevos**; en total, 100 CP piden al menos un caso nuevo (33 + 67), y 66 + 67 = 133.
 
 **Nuevos por capa:** **e2e 50** (en 12 archivos nuevos, `27` … `38`, más tres ids que van a archivos existentes,
 `21_29` y `17_15_bis_bis`; 30 de ellos fijan conducta vigente sin gate en pantalla —CP-001, 015, 027, 037, 041, 046,
 058, 065, 066, 068, 069, 072, 074, 076, 078–081, 089–092, 098, 100, 102, 107, 108, 109, 115, 116; CP-091 se escribe
 fijando lo vigente y se da vuelta con ADR-0018— y 20 dependen de un gap o de una decisión ya tomada —CP-013, 034–036,
 042 (el tooltip, nace en rojo), 071, 095, 110, 118 (`moveTo`), 123, 124, 126, 127, 128, 137, 138–142—; CP-111 es sólo
-de suite porque «Avanzar a» no ofrece «Cesión») · **suite 64** (del 160 en adelante; `CASOS_ESPERADOS` sube en cada
+de suite porque «Avanzar a» no ofrece «Cesión») · **suite 62** (del 161 en adelante; `CASOS_ESPERADOS` sube en cada
 commit que los agrega, y se dice) · **contrato 5** (CP-011, CP-019, CP-031, CP-033, CP-112; todos con sonda negativa
-sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en el motor y en la pantalla (50 + 64 + 5 =
-119 casos para 102 CP).
+sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en el motor y en la pantalla (50 + 62 + 5 =
+117 casos para 100 CP).
 
 **Decisiones del 22 y del 23-09-2026.** Cerradas y aplicadas: **D1** (ADR-0013: CP-028 y CP-030 protegen el gesto
 explícito; CP-031/033 retiran el anuncio; CP-034–036, CP-122 y CP-123 fijan el evento de evaluación, las cinco versiones
@@ -1147,7 +1147,7 @@ CP-131, CP-132, CP-138 … CP-142).
    decisión previa (§2.2 del documento de gaps): CP-017/018 (G-05), CP-071/073 (G-18),
    CP-049 (G-23), CP-099 negativa (G-24), CP-110/111/118 (b)/112 (G-25), CP-082/083 (G-26), CP-044/045 (G-27), CP-106
    (G-28). Cada uno con su regla ampliada o nueva y su fila en `invariantes.md`.
-3. **Luego, los T2 decididos y los que no esperan decisión**: CP-064/067 (G-12, decidido: T2, regla 24), CP-012/120 (G-31), CP-019/020/121 (G-02, G-03 en el reloj),
+3. **Luego, los T2 decididos y los que no esperan decisión**: CP-064/067 (G-12, decidido: T2, regla 24), CP-012/120 (G-31: implementados, caso 160), CP-019/020/121 (G-02, G-03 en el reloj),
    CP-010 y CP-011 (G-01: el dato; el filtro no cambia), CP-005/006 (G-29), CP-013 (control de configuración), CP-042
    (el tooltip), CP-113 (G-30), CP-054 (junto al 85).
 

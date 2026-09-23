@@ -50,6 +50,27 @@ timestamp: 2026-09-17T22:12:32Z
       contaba —«Tienes 1 factura elegida» no aparecía, «esta operación» no cuadraba con «Total oferta»— y diez casos
       de pantalla cayeron a la vez. Las dos listas de candidatas la rotulan «Cedida a Security». Gate de texto:
       `regla_60.test.mjs` (la cuarta condición, la candidata agregable y el motivo de exclusión, cada uno con sonda).
+
+61. **LA ANTIGÜEDAD MÁXIMA DESDE LA EMISIÓN ES CONDICIÓN DE CANDIDATURA DEL INBOUND, Y EL TOPE ES DEL TENANT** (23-09-2026,
+      M-10 · G-31, decidido el 22-09-2026 sin ADR: «necesitamos implementar un criterio para ir a buscar facturas que
+      tengan cierta antigüedad, ejemplo no más de 20 días desde su emisión, con eso basta»). «Buena factura» exige una
+      quinta condición, `!superaAntiguedad(f)`: la factura emitida hace más de `antiguedadMaxDias` días —contados contra
+      el corte del activo, regla 13-ter— no es candidata, porque nadie la va a comprar y contarla inflaba el monto con
+      que se dimensionaba la oportunidad. El tope vive en `CFG_OPER_BASE` (20 por defecto), se edita en Configuración ›
+      Operación («Antigüedad máxima de la factura») y se lee con `pol("antiguedadMaxDias", 20)`: el valor del código no
+      manda (regla 9-bis). Medido sobre el A1: 25.485 de las 30.000 facturas tienen 20 días o menos contra el corte, así
+      que el filtro deja pasar la mayoría.
+    - **«No más de 20» incluye el día 20** y excluye el 21. La «lista de emisores con tags» y la cesión previa quedaron
+      DESCARTADAS como criterios (M-10, segunda vuelta): el que entra es éste.
+    - **El filtro mira el DOCUMENTO, no la raíz del evento.** El evento del stream lleva la factura en `facturasOp[0]`
+      (con su `FchEmis`) y en la raíz traía `diasEmision: 1` fijo, así que la Bandeja decía «1d» para todas;
+      `diasEmisionEvento` mide el documento y `streamDesdeDTE` estampa esa misma antigüedad en la raíz: lo que el
+      filtro aplica es lo que la pantalla muestra.
+    - **El perfil de la Bandeja nombra el motivo con el tope vigente** («Antigüedad > 20 días (excluida)»), como nombra
+      la cesión ajena y el bloqueo de riesgo.
+    - Caso **160**, en las dos direcciones y con el tenant moviéndose: 5 y 20 entran, 21 sale; con 10 sale la de 15,
+      con 30 entra la de 21; sin la clave en la configuración persistida rige el 20 de `CFG_OPER_BASE`; y sobre 8.000
+      filas del stream ninguna captura supera el tope y ninguna fila de la Bandeja lleva el 1 fijo.
     - **El perfil de la Bandeja nombra el motivo** («Cedida a otro factoring (excluida)»), como nombra el bloqueo de
       riesgo: la diferencia entre «no tenemos regla para esto» y «otro se la llevó» es la que explica por qué no
       se captura.

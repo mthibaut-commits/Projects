@@ -89,11 +89,11 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-05 · Antigüedad máxima desde la emisión, configurable
 - **Como** Inbound (sistema), **quiero** que sólo sean candidatas las facturas emitidas hace no más de N días, con N como parámetro del tenant (20 por defecto), **para** no ir a buscar facturas que por su antigüedad nadie va a comprar.
-- **Estado**: por implementar (T2) → **decidido: implementar**. La «lista de emisores con tags» y la cesión previa como criterios quedan descartadas (22-09-2026).
-- **Reglas**: 9-bis · **Cláusulas**: M-10 · **Gaps**: G-31 (G-07 quedó cerrado: la antigüedad va en G-31).
+- **Estado**: vigente en CA-1 y CA-2 (implementada el 23-09-2026: regla 61, caso 160); CA-3 sigue por implementar (CP-013, control de configuración sin decisión). La «lista de emisores con tags» y la cesión previa como criterios quedan descartadas (22-09-2026).
+- **Reglas**: 9-bis, 61 · **Cláusulas**: M-10 · **Gaps**: G-31 (implementado; G-07 quedó cerrado: la antigüedad va en G-31).
 - **Criterios de aceptación**:
-  - CA-1 · Dado el parámetro antigüedad máxima = 20 días · Cuando el inbound corre · Entonces una factura emitida hace 21 días no es candidata y el detalle de la tarjeta la cuenta como excluida por antigüedad; una emitida hace 20 días sí lo es.
-  - CA-2 · Dado el parámetro cambiado a 30 días en Configuración › Inbound · Cuando corre de nuevo · Entonces la de 21 días entra: el valor del código no manda (regla 9-bis).
+  - CA-1 · Dado el parámetro antigüedad máxima = 20 días · Cuando el inbound corre · Entonces una factura emitida hace 21 días no es candidata y el perfil de la Bandeja la cuenta como «Antigüedad > 20 días (excluida)»; una emitida hace 20 días sí lo es.
+  - CA-2 · Dado el parámetro cambiado a 30 días en Configuración › Operación («Antigüedad máxima de la factura») · Cuando corre de nuevo · Entonces la de 21 días entra: el valor del código no manda (regla 9-bis).
   - CA-3 · Dado un criterio desconocido en la configuración · Cuando corre el filtro · Entonces no califica nada y Configuración › Inbound lo marca como no ejecutable (hoy califica todo: dirección que bloquea).
 - **Notas**: «Necesitamos implementar un criterio para ir a buscar facturas que tengan cierta antigüedad, ejemplo no más de 20 días desde su emisión, con eso basta» (22-09-2026). Los tags de hoy son del deudor (A3/A4); no se crea una lista de emisores.
 
@@ -557,13 +557,13 @@ Cada una de las 41 cláusulas y de los 36 gaps aparece al menos una vez.
 | G-16 · G-17 · G-18 · G-19 · G-20 | HU-16 (cerrado) · HU-26 (cerrado) · HU-27 · HU-35 · HU-37 |
 | G-21 · G-22 · G-23 · G-24 · G-25 | HU-20 (cerrado) · HU-21 · HU-19 · HU-36 · HU-39 |
 | G-26 · G-27 · G-28 · G-29 · G-30 | HU-30 · HU-17 · HU-38 · HU-02 · HU-40 |
-| G-31 · G-32 · G-33 · G-34 · G-35 | HU-05 · HU-21 · HU-35 · HU-37 · HU-32 |
+| G-31 · G-32 · G-33 · G-34 · G-35 | HU-05 (implementada: regla 61) · HU-21 · HU-35 · HU-37 · HU-32 |
 | G-36 | HU-42 (y HU-33 CA-3, vigente hoy · cambia con ADR-0018) |
 
-**Por estado (42 historias):** 20 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
+**Por estado (42 historias):** 21 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
 HU-29, HU-33 —con su CA-3 vigente hoy · cambia con ADR-0018— y HU-41) y 9 por definición ajustada el 22 y 23-09-2026
-(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34) y 1 implementada el 23-09-2026 (HU-03, ADR-0014: regla 60, caso 159)— · 22 por implementar (HU-02, HU-04,
-HU-05, HU-07, HU-08, HU-09 ADR-0019, HU-12, HU-13 ADR-0013, HU-17, HU-19, HU-21 ADR-0013, HU-25, HU-27, HU-30, HU-32
+(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34) y 2 implementadas el 23-09-2026 (HU-03, ADR-0014: regla 60, caso 159; HU-05, regla 61, caso 160)— · 21 por implementar (HU-02, HU-04,
+HU-07, HU-08, HU-09 ADR-0019, HU-12, HU-13 ADR-0013, HU-17, HU-19, HU-21 ADR-0013, HU-25, HU-27, HU-30, HU-32
 ADR-0016, HU-35 ADR-0015, HU-36, HU-37 ADR-0017, HU-38, HU-39, HU-40, HU-42 ADR-0018) · 0 pendientes de confirmar.
 
 **Preguntas abiertas dentro de historias que ya tienen estado:** ninguna desde el 23-09-2026.

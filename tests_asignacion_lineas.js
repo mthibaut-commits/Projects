@@ -4158,7 +4158,8 @@
       const r = clasificarFactura(ev, INBOUND_RULES);
       if (r) { capturadas++; if (esOtro && !sobreCorte) otroCapturada++; if (esOtro && sobreCorte) otroNotaAbre++; }
       else if (esOtro && !sobreCorte) excluidasOtro++;
-      else if (esOtro && sobreCorte && ev.credito && !ev.reclamada && !ev.notaCredito && !cedidaAFactoringAjeno(ev)) otroNotaNoAbre++;
+      // …descontando lo que el filtro de calidad excluye por el DOCUMENTO: cesión ajena (regla 60) y antigüedad (regla 61).
+      else if (esOtro && sobreCorte && ev.credito && !ev.reclamada && !ev.notaCredito && !cedidaAFactoringAjeno(ev) && !superaAntiguedad(ev)) otroNotaNoAbre++;
     }
     const archivoOk = capturadas > 0 && excluidasOtro > 0 && otroCapturada === 0 && otroNotaAbre > 0 && otroNotaNoAbre === 0;
     // POOL MANUAL: lo que el inbound deja «disponible para agregar a mano» es TODO bucket OTRO y tipo
@@ -7695,6 +7696,63 @@
        filtroOk && perfilOk && incorporaOk && sondaOk && archivoOk,
        `ajena a ${ajena159 ? ajena159.RazonSocialFactoring : "?"} excluida ${filtroOk} · perfil ${perfilOk} · incorporar: ajena bloqueada / nuestra entra ${incorporaOk}`
        + ` · sonda sin cesión califica ${sondaOk} · archivo: ${exclAjena} ajenas excluidas, ${capAjena} capturadas, ${capNuestra} nuestras capturadas ${archivoOk}`);
+  }
+
+  {
+    // 160 · La antigüedad máxima desde la emisión es condición de candidatura del inbound (regla 61) y parámetro del
+    //       tenant (`antiguedadMaxDias`, 20 por defecto; regla 9-bis): el valor del código no manda.
+    const guardado160 = { ...CFG_ACTIVA };
+    // El evento del stream lleva el documento en `facturasOp[0]` (con su `fchEmis`) y en la raíz una antigüedad propia:
+    // el caso pone las dos en DESACUERDO (raíz a 1 día, documento a N) para fijar que el filtro mira el documento.
+    const ev160 = (dias, folio) => ({
+      id: `EV160-${folio}`, tipo: "factura", cedente: "Cedente 160", rutEmisor: "76.160.160-0", pagador: "Deudor 160", deudor: "Deudor 160",
+      tipoDeudor: "Lista Blanca", inboundBucket: "CAT1", histFactoring: "bice", credito: true, reclamada: false, notaCredito: false,
+      esCliente: true, sowTendencia: "Manteniendo", diasEmision: 1, monto: 1e6, nFacturas: 1,
+      facturasOp: [{ folio, fchEmis: diaISO(corteDTE(), -dias), monto: 1e6, credito: true }],
+    });
+    const ev5 = ev160(5, 1605), ev15 = ev160(15, 1615), ev20 = ev160(20, 1620), ev21 = ev160(21, 1621);
+    const buena = (ev) => CRITERIO_PRED["Buena factura"](ev) === true;
+    let bordeOk = false, perfilOk = false, reglaOk = false, tenantOk = false, defectoOk = false, documentoOk = false, archivoOk = false;
+    let exclArchivo = 0, capArchivo = 0, capViejas = 0, bandejaMal = 0;
+    try {
+      aplicarCfgActiva({ ...guardado160, antiguedadMaxDias: 20 });
+      // (a) El borde: «no más de 20» incluye el día 20 y excluye el 21; la de 5 entra.
+      bordeOk = buena(ev5) && buena(ev20) && !buena(ev21) && superaAntiguedad(ev21) === true && superaAntiguedad(ev20) === false;
+      // (b) El perfil de la Bandeja nombra el motivo con el N vigente, y no llama «Buena factura» a la excluida.
+      const perf21 = criteriosDesdeFactura(ev21), perf20 = criteriosDesdeFactura(ev20);
+      perfilOk = perf21.includes("Antigüedad > 20 días (excluida)") && !perf21.includes("Buena factura")
+        && perf20.includes("Buena factura") && !perf20.some((c) => /Antigüedad/.test(c));
+      // (c) Ninguna regla por defecto captura la vieja; a la del borde la captura alguna.
+      reglaOk = clasificarFactura(ev21, INBOUND_RULES) === null && clasificarFactura(ev20, INBOUND_RULES) !== null;
+      // (d) El tenant manda: con 10 la de 15 sale (y el perfil dice 10), con 30 la de 21 entra.
+      aplicarCfgActiva({ ...guardado160, antiguedadMaxDias: 10 });
+      const con10 = !buena(ev15) && buena(ev5) && criteriosDesdeFactura(ev15).includes("Antigüedad > 10 días (excluida)");
+      aplicarCfgActiva({ ...guardado160, antiguedadMaxDias: 30 });
+      const con30 = buena(ev21) && buena(ev15);
+      tenantOk = con10 && con30;
+      // (e) Sin la clave (un tenant persistido antes de que existiera) rige el valor por defecto, que es el de
+      //     `CFG_OPER_BASE`: nunca un número propio del criterio. A propósito sin `aplicarCfgActiva`, que la rellenaría.
+      const sinClave = { ...guardado160 };
+      delete sinClave.antiguedadMaxDias;
+      CFG_ACTIVA = sinClave;
+      defectoOk = CFG_ACTIVA.antiguedadMaxDias === undefined && buena(ev20) && !buena(ev21) && CFG_OPER_BASE.antiguedadMaxDias === 20;
+      aplicarCfgActiva({ ...guardado160, antiguedadMaxDias: 20 });
+      // (f) El filtro mira el DOCUMENTO: la raíz dice 1 día en los cuatro eventos y sólo el de 21 días queda fuera.
+      documentoOk = ev21.diasEmision === 1 && diasEmisionEvento(ev21) === 21 && diasEmisionEvento(ev5) === 5;
+      // (g) Sobre el archivo (8.000 filas del stream): ninguna captura supera el tope, hay excluidas por antigüedad,
+      //     y la Bandeja lleva la antigüedad del documento y no un 1 fijo.
+      const muestra160 = streamDesdeDTE((window.DTESYNC || []).slice(0, 8000));
+      for (const ev of muestra160) {
+        if (ev.diasEmision !== diasDesdeEmision(ev.facturasOp[0])) bandejaMal++;
+        const vieja = diasEmisionEvento(ev) > 20, r = clasificarFactura(ev, INBOUND_RULES);
+        if (vieja) { if (r) capViejas++; else exclArchivo++; } else if (r) capArchivo++;
+      }
+      archivoOk = bandejaMal === 0 && capViejas === 0 && exclArchivo > 0 && capArchivo > 0;
+    } finally { aplicarCfgActiva(guardado160); }
+    ok("160 la antigüedad máxima desde la emisión es condición de candidatura del inbound y tope del tenant: la de 20 días entra, la de 21 sale, con 10 sale la de 15 y sin la clave rige el 20 de la base",
+       bordeOk && perfilOk && reglaOk && tenantOk && defectoOk && documentoOk && archivoOk,
+       `borde 5/20 entran, 21 sale ${bordeOk} · perfil ${perfilOk} · reglas ${reglaOk} · tenant 10→15 sale, 30→21 entra ${tenantOk} · sin clave rige 20 ${defectoOk}`
+       + ` · mira el documento ${documentoOk} · archivo: ${exclArchivo} excluidas por antigüedad, ${capViejas} viejas capturadas, ${capArchivo} capturadas, ${bandejaMal} con «1d» ${archivoOk}`);
   }
 
   console.log(out.join("\n"));

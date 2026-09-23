@@ -63,19 +63,22 @@ clasificación de deudor y el contexto comercial del cedente: SOW (`SOW_POR_RUT`
 
 ## 3. Filtro de calidad: qué es una «buena factura»
 
-Antes de cualquier regla comercial. **Tres condiciones, todas obligatorias:**
+Antes de cualquier regla comercial. **Cinco condiciones del documento, todas obligatorias:**
 
 | Condición | Regla | Si falla |
 |---|---|---|
 | **A crédito** | `FormaPago === "2"` | se descarta del inbound |
 | **Sin reclamo** | `EstadoDTE.Reclamado !== "1"` | se descarta |
 | **Sin nota de crédito** | `EstadoDTE.NotaCredito !== "1"` | se descarta |
+| **No cedida a un factoring ajeno** | el A2 no registra una cesión a un factoring distinto de Security (`cedidaAFactoringAjeno`; regla 60) | se descarta |
+| **Emitida hace no más de N días** | `FchEmis` contra el corte del activo, con `N = antiguedadMaxDias` del tenant (20 por defecto; regla 61) | se descarta |
 
-A eso el criterio «Buena factura» le suma la **cuarta** condición, que no es del documento sino del
-deudor: que **abra oportunidad** (§4). Las cuatro juntas:
+A eso el criterio «Buena factura» le suma la condición que no es del documento sino del deudor: que
+**abra oportunidad** (§4). Todas juntas:
 
 ```
-buena_factura = credito  y  no_reclamada  y  no_nota_credito  y  deudor_abre_oportunidad
+buena_factura = credito  y  no_reclamada  y  no_nota_credito  y  no_cedida_a_factoring_ajeno
+               y  emitida_hace_no_mas_de_N_dias  y  deudor_abre_oportunidad
 ```
 
 > **Un filtro que la política pide y el código NO aplica acá** (ver §11): la marca **«solicitar XML»**
@@ -85,6 +88,11 @@ buena_factura = credito  y  no_reclamada  y  no_nota_credito  y  deudor_abre_opo
 > Security es candidata como cualquier otra, porque es cartera propia. Antes la cesión a la
 > competencia se detectaba **después**, como pérdida por AECSync, y la factura ya cedida entraba al
 > monto con que se dimensionaba la oportunidad.
+>
+> La **antigüedad** entró el mismo día (regla 61; M-10, G-31): `antiguedadMaxDias` es del tenant (20 días por
+> defecto, Configuración › Operación), se cuenta contra el corte del activo (regla 13-ter) y «no más de N» incluye
+> el día N; el perfil de la Bandeja nombra «Antigüedad > N días (excluida)». Medido sobre el A1: 25.485 de las
+> 30.000 facturas tienen 20 días o menos, así que el filtro deja pasar la mayoría.
 
 ---
 
@@ -145,8 +153,8 @@ criterios: `facturaCalifica` exige que se cumplan **todos** (`every`).
 
 | Criterio | Qué mide |
 |---|---|
-| `Buena factura` | las cuatro condiciones del §3 |
-| `Deudor elegible` | sólo la cuarta: que el deudor abra oportunidad |
+| `Buena factura` | las seis condiciones del §3 (cinco del documento y la del deudor) |
+| `Deudor elegible` | sólo la del deudor: que abra oportunidad |
 | `Crédito` | sólo que sea a crédito |
 | `Lista Deudores Prime` | Lista Blanca **o** Autorizado |
 | `Lista Deudores ND>4.2` | nota del deudor sobre el corte, esté o no en lista |
@@ -191,6 +199,9 @@ mismo:
 - **«Histórico Security con bloqueo (excluido)»** — Riesgo lo tiene bloqueado.
 
 Sólo la segunda explica por qué una factura que *debería* capturarse no se capturó.
+
+Desde el 23-09-2026 el perfil nombra dos exclusiones más, las dos del **documento**: **«Cedida a otro factoring
+(excluida)»** (regla 60) y **«Antigüedad > N días (excluida)»** (regla 61, con el tope vigente del tenant).
 
 ---
 
@@ -368,3 +379,6 @@ Tres observaciones, en orden de importancia:
    tenant?** Hoy están en el código; el resto de los parámetros operativos ya salieron a configuración.
 5. **¿El cupo tentativo de los clientes sin línea (MM$300–1.300) es una banda del negocio?** Hoy es
    sintético y determinista por RUT.
+6. **¿La antigüedad máxima desde la emisión es criterio del inbound?** Decidido el 22-09-2026 e implementado el
+   23-09-2026 (regla 61): sí, como condición del filtro de calidad, con el tope como parámetro del tenant
+   (`antiguedadMaxDias`, 20 días por defecto).

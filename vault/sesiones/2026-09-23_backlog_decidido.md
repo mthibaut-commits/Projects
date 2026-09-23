@@ -72,3 +72,37 @@ tras el clic— leía las pestañas ANTES de que la simulación aterrizara: la l
 `latenciaBaseMs + n · latenciaPorDocMs` (700 + 45·39 = 2.455 ms más el render). Se midió construyendo el fuente de
 `HEAD` al lado: mismo gesto, 17 facturas, 1.465 ms. El caso ahora espera a que el panel de arranque se retire, que es
 la señal, como ya hacía `14_13_sexdecies`. Un tiempo fijo en un e2e es una apuesta sobre el tamaño del dato.
+
+## 2 · M-10 · La antigüedad máxima desde la emisión, configurable (regla 61, caso 160)
+
+**Qué cambió.** «Buena factura» exige una quinta condición, `!superaAntiguedad(f)`: la factura emitida hace más de
+`antiguedadMaxDias` días —contados contra el corte del activo, regla 13-ter— no es candidata. El tope es del tenant
+(`CFG_OPER_BASE`, 20 por defecto; sin subir el esquema, regla 39: la clave nueva la absorbe el merge), se edita en
+Configuración › Operación («Antigüedad máxima de la factura», al lado de la ventana del libro) y se lee con `pol`. El
+perfil de la Bandeja nombra «Antigüedad > N días (excluida)» con el N vigente.
+
+**Medido antes de escribir**, sobre el A1 (`medir_antiguedad.mjs` en el scratchpad): el corte es el 22-06-2026 y las
+emisiones van del 06-05 al 22-06; **25.485 de 30.000** facturas tienen 20 días o menos (23.545 ≤ 8; 27.142 ≤ 30;
+30.000 ≤ 60), y de las 22.353 «buenas» por documento (crédito, sin reclamo ni NC) 18.984 pasan el tope. O sea que el
+filtro deja pasar la mayoría y el demo no se apaga; sobre las 8.000 filas del stream que recorre la suite quedan
+**1.215 excluidas por antigüedad, 0 viejas capturadas, 4.823 capturadas** (caso 160).
+
+**Lo que costó / sorpresas.**
+- **La raíz del evento del stream traía `diasEmision: 1` FIJO** (`streamDesdeDTE`), así que la Bandeja decía «1d» para
+  las 30.000 facturas, y `fechasDocumento(ev)` sobre la raíz daba «ayer» para todas. El documento real va en
+  `facturasOp[0].fchEmis`. El predicado nuevo (`diasEmisionEvento`) mira el documento primero, y la raíz ahora lleva
+  la antigüedad medida: lo que el filtro aplica es lo que la pantalla muestra. El caso 160 pone raíz y documento en
+  desacuerdo a propósito (1 vs 21) para fijar cuál manda.
+- **El caso 121 volvió a caer**, como con ADR-0014: contaba como «no capturada» toda OTRO con nota sobre el corte sin
+  descontar lo que el filtro excluye por el documento (13 eran más viejas que 20 días). Descuenta también la
+  antigüedad.
+- **CP-012 apuntaba al sitio equivocado**: pedía leer la exclusión en «el detalle de la tarjeta» (`capacidadDeudores`),
+  que segmenta deudores y no facturas. El lugar es el perfil de la Bandeja (`criteriosDesdeFactura`), y así quedó.
+- **La pantalla de Configuración se abrió** para ver el campo (el e2e no la cubre): «Antigüedad máxima de la factura»,
+  valor 20, mín 1, máx 365. Las capturas de `Capturas_UI/` no se regeneraron: no son deterministas (deuda 2 del
+  tablero) y regenerarlas es decisión del usuario.
+
+**Documentos:** spec del inbound (§3 con las cinco condiciones del documento, §5.1, §5.3, §12.6), spec del curse (M-10
+implementada; 27 implementadas · 10 distinto), gaps (G-31 cerrado: implementado; 2 implementados · 16 decididos),
+HU-05 vigente en CA-1/CA-2, CP-012/120 con el caso 160 (66 cubiertos · 67 nuevos · 100 CP piden caso), regla 61 y su
+fila, cifras (160/160; 90 reglas).
