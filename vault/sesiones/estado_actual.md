@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-23T18:05:00Z
+timestamp: 2026-09-23T20:30:00Z
 ---
 
 # Estado actual
@@ -13,8 +13,8 @@ timestamp: 2026-09-23T18:05:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **171/171 PASA**, **66 archivos de gate de contrato**
-(440 tests), **37 casos e2e** (37/37), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(`pipeline_comercial.jsx`), build standalone, **171/171 PASA**, **65 archivos de gate de contrato**
+(567 tests), **37 casos e2e** (37/37), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
 (104 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
 gate. La crónica del 17 al 22-09 vive en sus logs — ADR-0001 a 0012, el linter como paso 0-bis, todo lo de
 plata del 20-09 (reglas 41–46, ADR-0007 a 0011, casos 145–151) y, del 21 y 22-09 en sesiones paralelas, las
@@ -45,9 +45,9 @@ cartera de 500 clientes; el fallback de 80 empresas se fue y `auditar_unidades` 
 >    «Negociación» en una operación ya enviada a comité · **join de empresas SIEMPRE por RUT** (8 sitios; T1) ·
 >    `.bat` una vez · regenerar `Capturas_UI/` (deuda 2) · O01 · 28 · 13-quater · `pipeline.zip`.
 
-## En vuelo · nada: TODO lo pendiente está en `main` — backlog de ADR (64–75) y 39 skills de terceros (63)
-Las skills se CORRIGEN, no se descartan: 12 llevan su bloque `AJUSTE-LOCAL-NEX` citando la regla, con auditor y
-gate. Verificar el árbol MEZCLADO y no la rama —y que un paso 0 rojo APAGA el CI entero— subió a
+## En vuelo · nada: TODO lo pendiente está en `main` — backlog de ADR (64–75)
+Las **skills de terceros y los servidores MCP salieron del repo** (ADR-0022, 23-09: «no aportan nada al proyecto
+ya que instalan librerías»); quedan `datamart-ui` y la regla 63 con su gate de paleta. Verificar el árbol MEZCLADO y no la rama —y que un paso 0 rojo APAGA el CI entero— subió a
 [`flujo_git.md`](../conocimiento/flujo_git.md) ([log](./2026-09-23_el_paso_0_lleva_tres_commits_en_rojo.md)).
 
 ## Bloqueos · los dos son del usuario, desde Windows
@@ -71,8 +71,7 @@ mirando `git cherry`, nunca `--merged` a secas (`unidades-peso-verificacion` es 
    VERIFICA: el 23-09 el mismo bloque se renumeró dos veces (60–71 → 63–74 → 64–75) porque la otra sesión
    publicó durante los ocho minutos de e2e. Procedimiento y script: [log](./2026-09-23_mezclar_todo_lo_pendiente.md).
    Al mezclar, `git cherry` y no `--merged`: dice si hay un commit EQUIVALENTE aguas arriba, que es la pregunta.
-5. **Hooks en Windows**: `node verificar_hooks.mjs` una vez · los 13 skills de `taste-skill` viven en el
-   `~/.claude/skills/` del CONTENEDOR · `gitflow_guard.mjs` cree que `git merge-base` integra a `main` (el
+5. **Hooks en Windows**: `node verificar_hooks.mjs` una vez · `gitflow_guard.mjs` cree que `git merge-base` integra a `main` (el
    `\b` de su patrón casa con el guion): usar `git branch -r --merged` · y `invariantes.test.mjs` comprueba
    que el caso citado EXISTE, no que sea el correcto: cruzar número y título.
 

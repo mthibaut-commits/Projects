@@ -142,23 +142,12 @@ timestamp: 2026-09-17T15:29:14Z
     - **Por qué no es una precaución teórica.** El `DESIGN.md` de Claude/Anthropic que el usuario trajo ese mismo día declara 23 colores y **22 son foráneos**: sólo comparte `#ffffff` con el fuente. Su lienzo es crema (`#faf9f5`), su primario coral (`#cc785c`) y su display una serif (Copernicus/Tiempos) — o sea lo contrario punto por punto de Datamart, que es lienzo blanco, primario púrpura `#703EFF` y Geist sans. Ninguno de los dos está mal; lo que está mal es tener los dos.
     - **Un token foráneo no falla el día que entra.** Aparece un color que no está en `C`, la pantalla sigue renderizando y un rincón deja de ser Datamart. Es el agujero de `t14` y de `t16` otra vez —una clase que nadie declaró no falla, sale de otro tamaño y nadie lo ve—, y por eso la defensa no puede ser la revisión: tiene que ser un gate.
     - **El gate es una LÍNEA BASE de paleta** (`regla_63.test.mjs`, `BASE_PALETA`): los 137 hex de seis dígitos que el fuente tenía el 18-09-2026. Uno nuevo rompe, y entonces hay dos salidas honestas —viene de afuera y no entra, o es un color propio que se decidió agregar y la línea base sube **en el commit**, como las de `auditores.test.mjs`—. Uno que desaparece también rompe, a propósito. No se cuentan apariciones: 1728 usos de 133 colores no dicen nada, el conjunto sí.
-    - **Ningún `DESIGN.md` va a la raíz del repo**, y eso el gate lo fija como regla, no como snapshot. Un `DESIGN.md` en la raíz es, por la convención que introdujo Google Stitch, «cómo debe verse ESTE proyecto», y los agentes de diseño lo leen así: dejar caer ahí el de Stripe, el de Linear o el de Claude no agrega una referencia, **contradice en silencio** a `datamart-ui` y a los ADR que no se re-litigan. Las referencias viven en `Skills/design-md/` —la colección de `awesome-design-md` en `coleccion/` (ignorada por git, se trae con `obtener.mjs`) y las que traiga el usuario en `propias/`—, y se consultan; no gobiernan.
+    - **Ningún `DESIGN.md` va a la raíz del repo**, y eso el gate lo fija como regla, no como snapshot. Un `DESIGN.md` en la raíz es, por la convención que introdujo Google Stitch, «cómo debe verse ESTE proyecto», y los agentes de diseño lo leen así: dejar caer ahí el de Stripe, el de Linear o el de Claude no agrega una referencia, **contradice en silencio** a `datamart-ui` y a los ADR que no se re-litigan. Las referencias externas se consultan y no gobiernan; desde el 23-09-2026 tampoco se versionan en el repo (ADR-0022): la colección de `awesome-design-md` y su descargador salieron con las skills de terceros.
     - **Dónde NO alcanza el gate, dicho para que nadie lo suponga cubierto.** Vigila el color, que es donde el choque es medible y automático. El tipo, el radio y el espaciado siguen sostenidos por `fuente.test.mjs` (toda clase del `<style>` usada tiene que estar declarada) y por la revisión: una referencia que proponga una serif de display o un radio de 2 px no la caza `BASE_PALETA`. Si eso llega a pasar de verdad, la regla se extiende con su gate, no se amplía la confianza.
-    - **Y la skill se CORRIGE** (23-09-2026, instrucción del usuario: «si el skill está mal, actualiza el skill»).
-      Declarar en el `CLAUDE.md` que las reglas de la casa ganan no alcanza: el agente lee la skill, no la nota,
-      y la de TDD declara que aplica a «any new logic, any bug fix, any change that could break existing
-      behavior». Así que cada skill que contradice una regla lleva su bloque **`AJUSTE-LOCAL-NEX`** arriba del
-      todo, con la regla citada. El cuerpo ajeno **no se reescribe** —sigue sirviendo para lo que sí aporta—:
-      se le antepone lo que acá manda, y el auditor lo recorta antes de escanear para no medirse a sí mismo.
-    - **Medido, no supuesto** (`node auditar_skills.mjs`): **12 de 39** chocan. Cuatro piden una capa unitaria
-      que este repo decidió no tener, una prescribe Conventional Commits en inglés y siete traen su propia
-      paleta. Y **tres choques que se daban por ciertos no existen**: `documentation-and-adrs` dice
-      `PROPOSED → ACCEPTED → SUPERSEDED`, que es la regla 7; `code-review-and-quality` argumenta CONTRA el
-      «LGTM sin evidencia», que es la 8; y los cinco `Vite`/`webpack` son ejemplos incidentales. Afirmar un
-      choque que no está cuesta lo mismo que no ver uno que sí: las dos veces se deja de mirar.
-    - **El gate `skills.test.mjs`** tiene las dos clases. **Snapshot** (`BASE_CHOQUES`): qué skill choca con
-      qué regla — cambia al instalar, sacar o actualizar una, y eso va escrito en el commit. **Regla**: toda
-      skill que choca lleva su bloque, y va ANTES del cuerpo. Eso no se actualiza nunca: si una reinstalación
-      pisa el bloque —que es lo que pasaría, porque `skills-lock.json` guarda el hash de upstream— el gate cae
-      y se vuelve a poner. Sin este gate la corrección sería deriva silenciosa, que es el agujero de `t14`
-      una vez más: no falla, sale distinto, nadie lo ve.
+    - **Las skills de terceros salieron del repo el 23-09-2026** (ADR-0022; el usuario: «todas estas ramas no aportan
+      nada al proyecto ya que instalan librerías»). Con ellas se fueron su corrección local (`AJUSTE-LOCAL-NEX`), el
+      auditor `auditar_skills.mjs`, el gate `skills.test.mjs`, `skills-lock.json` y la colección de `DESIGN.md` de
+      `Skills/design-md/`. Lo que esta regla protege no dependía de ellas: la paleta sigue en su línea base y la raíz
+      sin `DESIGN.md`, y eso vale para CUALQUIER referencia externa —una captura, un Figma, un `DESIGN.md` que
+      alguien traiga—. Cómo se las corrigió mientras estuvieron, medido (12 de 39 chocaban), queda en el log
+      `2026-09-23_la_skill_se_corrige.md`.
