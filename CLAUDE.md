@@ -47,6 +47,7 @@ contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ni
 |---|---|
 | Build en Windows (el del usuario) | `Iniciar_NEX_Factoring.bat` → `build_app.ps1` — **mismo contrato que `build_app.mjs`: si cambia uno, cambia el otro** |
 | ¿Los hooks están corriendo acá? | `node verificar_hooks.mjs` — **la primera vez en cada máquina**, y cuando un hook «no saltó» |
+| Integrar `main` antes de modificar (skill `sincronizar-main`) | `node sincronizar_main.mjs` — mide la rama contra `origin/main`, propone los comandos y da los siguientes números libres; no toca nada |
 | Código muerto | `node auditar_muerto.mjs` (`--csv` para el inventario en crudo) |
 | Aislamiento de los motores | `node auditar_aislamiento.mjs` |
 | Unidades (millones donde va un peso) | `node auditar_unidades.mjs` — candidatos, se verifican a mano |
@@ -71,8 +72,8 @@ contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ni
    cambia en el detalle, el wizard o la bandeja lo verifica el paso 6 o abrir la pantalla — la suite no los monta.
 5. **Idiomas**: UI, documentación, vault, commits y comentarios en **español (Chile)**. Los identificadores
    siguen la convención que el fuente ya tiene (`.claude/rules/code_style.md`).
-6. **Git**: `main` estable; se trabaja en la rama designada de la sesión o en `feature/<slug>`; integración con
-   `merge --no-ff`; sin worktrees salvo que el usuario los pida. Mensajes de commit en español, descriptivos,
+6. **Git**: `main` estable; se trabaja en la rama designada de la sesión o en `feature/<slug>`, **integrando `main`
+   antes de modificar** (skill `sincronizar-main`); integración con `merge --no-ff`; sin worktrees salvo que el usuario los pida. Mensajes de commit en español, descriptivos,
    que digan qué y por qué — el estilo del `git log`. → `vault/conocimiento/flujo_git.md`. *(Bloqueado por hooks.)*
 7. **Decisiones = ADR**: una decisión con alternativas descartadas va a `vault/adr/` (inmutable; para cambiar,
    ADR nuevo que la reemplaza). Las tomadas antes de existir el vault están en `vault/adr/index.md`
