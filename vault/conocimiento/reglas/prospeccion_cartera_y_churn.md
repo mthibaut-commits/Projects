@@ -190,3 +190,41 @@ timestamp: 2026-09-17T22:12:32Z
     - **La estrategia compara contra lo registrado** —y nuestra tasa en esas mismas operaciones— y, si no hay nada
       registrado, pide registrarlo. La fecha de cada fila es la de la operación, en orden cronológico.
     - Caso **175**.
+
+81. **Las filas «Sin clasificar» del tubo se juntan por RUT, llevan su código de oportunidad, y sólo las ve el gestor
+    del pipeline** (24-09-2026, reportado por el usuario mirando el tubo: «¿por qué se ven estas oportunidades?»,
+    «ahí debiera ir el código de la oportunidad», «se están mostrando las sin clasificar al ejecutivo Carla y eso no
+    debiera ser así: deberían mostrarse al ejecutivo gestor del pipeline, y sólo él ve todo lo que no tiene
+    clasificación»). Es el corolario de la regla 46 para el CEDENTE y uno de los 8 sitios del T1 «join de empresas
+    siempre por RUT».
+    - **Lo que se veía.** Filas con «4 deudores · 5 facturas» y el desglose «0 Prime con línea · 0 Otros con línea ·
+      0 deudores sin línea», todas «Sin línea», y en el subtítulo `OF-CONSTRUCTORA Y SERVICIOS NU?EZ SPA` donde la
+      fila sana dice `OP-D95265-R2`. Tres síntomas, **una causa**: `agruparInboundPorCliente` agrupaba por
+      NOMBRE (`ev.cedente`) y por nombre juntaba a los deudores (`ev.pagador`), y **tiraba el RUT que el evento del
+      inbound sí trae** (`rutEmisor`) y el `opId` que ya venía calculado del RUT. La fila salía sin `rutEmisor`,
+      `capacidadDeudores` salía por su guarda —`if (!rutCliente) return vacio`— y el desglose quedaba en cero bajo un
+      encabezado que la agrupación sí había contado; `lineaDeCliente` no encontraba línea; y el id era
+      `"OF-" + nombre`, que es lo que aparecía en el subtítulo. **No es que no tuvieran línea: nadie podía preguntar
+      por ella.**
+    - **Ahora:** la clave de agrupación es `ev.rutEmisor`, con el nombre sólo de respaldo cuando el evento no trae
+      RUT; la fila lleva `rutEmisor` y su `id` es el `opId` del evento (`OP-D<hash del RUT>`, el mismo de la
+      oportunidad que ese cedente abre); los deudores se juntan por `rutRecep` y cada uno lleva su `rut`. El evento
+      del inbound pasa a traer `rutRecep: r.RUTRecep` —la fila del A1 lo tenía y el constructor lo descartaba— y
+      `analisisDeudoresDeDeal` prefiere el `rut` que la fila ya trae antes que resolverlo por nombre.
+    - **Dos direcciones, las dos en el caso:** el mismo RUT escrito de dos formas («NUÑEZ» y «Nunez») es UN cedente
+      —antes eran dos filas—, y el mismo nombre con dos RUT son DOS cedentes —lo que un join por nombre nunca podía
+      distinguir—.
+    - **Quién las ve.** Sólo el **gestor del pipeline**, que es el ROL `inbound` (`esGestorPipeline(code)`: `inbound`
+      o admin), y ve TODO lo sin clasificar. Antes la ejecutiva comercial veía las de su cartera («Otras Empresas») y
+      cualquier no-ejecutivo las que no tenían dueño («Otras facturas»). La visibilidad sigue al rol y no a un código
+      de usuario, por lo mismo que la atribución (21-09-2026: el super-admin es un rol). Para los demás, el filtro
+      «Otras facturas» queda vacío y su tooltip lo dice.
+    - **Y el desglose cuadra con el encabezado, siempre** (mismo día, mirando `SOC ALTAMIRANO Y SOTO LTDA · 7 deudores`
+      con 0/0/0: «eso siempre debiera de cuadrar»). `capacidadDeudores` ya no devuelve el vacío sin RUT del cliente ni
+      sin su estado de líneas: cuando nadie puede tener línea, los N deudores van a «sin línea» con todo su monto —la
+      plata trabada que ese chip existe para mostrar—. **Σ(Prime con línea + Otros con línea + sin línea) = N deudores**
+      es la invariante; el vacío queda sólo para cero deudores. El lector no distingue «no hay» de «no se pudo
+      preguntar», así que el motor no puede contestar lo segundo con un cero.
+    - Caso **178** (la agrupación pura, en las dos direcciones, con el respaldo por nombre, y el desglose que cuadra
+      con y sin RUT del cliente) y `regla_81.test.mjs` (la clave por RUT, el `opId` como id, `rutRecep` en el evento, los
+      deudores por RUT, la visibilidad por rol y la guarda de `capacidadDeudores`; cada uno con su sonda).

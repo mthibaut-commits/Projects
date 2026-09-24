@@ -2551,7 +2551,7 @@
     const promedioOk = c6.primeConLinea.n === 1 && c6.primeConLinea.monto === 20e6;
     const bordesOk = capacidadDeudores([], rutCli, inyecta).sinLinea.n === 0
       && capacidadDeudores(null, rutCli, inyecta).sinLinea.n === 0
-      && capacidadDeudores([D("11.111.111-1", true, [1e6])], "", inyecta).sinLinea.n === 0;
+      && capacidadDeudores([D("11.111.111-1", true, [1e6])], "", inyecta).sinLinea.n === 1; // sin RUT del cliente nadie tiene línea: el deudor va a «sin línea», no al vacío (regla 81)
 
     ok("100 «con línea» en el tubo es un lookup sobre el listado y una COTA de lo que el motor asigna",
        porFacturaOk && trabadoOk && lf1Ok && nivel3Ok && sinDistinguirOk && cotaOk && promedioOk && bordesOk,
@@ -8887,6 +8887,55 @@
     ok("177 el otorgamiento completo deja la operación Pendiente Integración y fuera del tubo, nunca Girada: el giro queda pendiente para que lo autorice Operaciones, la verificación pendiente detiene el avance (VER-01) y fuera de Otorgamiento no avanza",
        listo && destinoOk && noGiraOk && ver01Ok && fueraOk,
        `fixture ${listo} · destino ${destinoOk} (stage «${patch && patch.stage}» · integracion «${patch && patch.integracion}» · estado «${estadoOperacion({ ...base177, ...patch })}») · no gira ${noGiraOk} · VER-01 ${ver01Ok} (${pendN} pendiente(s)) · fuera de otorgamiento ${fueraOk}`);
+  }
+
+  // 178 · LAS FILAS «SIN CLASIFICAR» SE JUNTAN POR RUT Y LLEVAN SU CÓDIGO (regla 81; reportado por el usuario el
+  // 24-09-2026 mirando el tubo). `agruparInboundPorCliente` es pura y de nivel módulo: agrupaba por NOMBRE y
+  // tiraba el RUT que el evento trae, así que su id era `"OF-" + nombre`, los deudores no llevaban RUT y
+  // `capacidadDeudores` salía por su guarda con el desglose en 0/0/0 bajo un encabezado que decía 4 deudores.
+  {
+    const ev = (x) => ({ id: x.id, cedente: x.cedente, rutEmisor: x.rutEmisor, opId: x.opId, pagador: x.pagador,
+                         rutRecep: x.rutRecep, nFacturas: 1, monto: x.monto, sector: "Construcción", esCliente: false, tag: "Factoring" });
+    // (a) EL MISMO RUT ESCRITO DE DOS FORMAS ES UN SOLO CEDENTE. Antes eran dos filas.
+    const dosFormas = agruparInboundPorCliente([
+      ev({ id: "e1", cedente: "CONSTRUCTORA NUÑEZ SPA", rutEmisor: "76.111.222-3", opId: "OP-D178", pagador: "BERLIAM SPA", rutRecep: "76.050.301-0", monto: 10e6 }),
+      ev({ id: "e2", cedente: "Constructora Nunez SpA", rutEmisor: "76.111.222-3", opId: "OP-D178", pagador: "EBCO S.A.", rutRecep: "76.222.333-4", monto: 20e6 }),
+    ]);
+    const unaFila = dosFormas.length === 1;
+    const fila = dosFormas[0] || {};
+    // (b) LA FILA LLEVA EL RUT Y EL CÓDIGO DE OPORTUNIDAD, no un id armado con el nombre.
+    const identidadOk = fila.rutEmisor === "76.111.222-3" && fila.id === "OP-D178" && !/^OF-/.test(String(fila.id));
+    // (c) CADA DEUDOR LLEVA SU RUT, y se juntan por RUT: dos facturas del mismo deudor son UN deudor.
+    const deudoresOk = (fila.deudores || []).length === 2 && (fila.deudores || []).every((d) => d.rut && d.name);
+    const mismoDeudor = agruparInboundPorCliente([
+      ev({ id: "e3", cedente: "X", rutEmisor: "76.000.000-1", opId: "OP-D1", pagador: "BERLIAM SPA", rutRecep: "76.050.301-0", monto: 1e6 }),
+      ev({ id: "e4", cedente: "X", rutEmisor: "76.000.000-1", opId: "OP-D1", pagador: "Berliam SpA", rutRecep: "76.050.301-0", monto: 2e6 }),
+    ]);
+    const unDeudorOk = mismoDeudor.length === 1 && mismoDeudor[0].deudores.length === 1 && mismoDeudor[0].deudores[0].monto === 3e6;
+    // (d) EL MISMO NOMBRE CON OTRO RUT SON DOS CEDENTES. Es la dirección contraria, y la que un join por
+    //     nombre nunca podía distinguir.
+    const dosRuts = agruparInboundPorCliente([
+      ev({ id: "e5", cedente: "COMERCIAL SUR LTDA", rutEmisor: "76.500.000-1", opId: "OP-D5", pagador: "A", rutRecep: "76.1", monto: 1e6 }),
+      ev({ id: "e6", cedente: "COMERCIAL SUR LTDA", rutEmisor: "76.500.000-2", opId: "OP-D6", pagador: "A", rutRecep: "76.1", monto: 1e6 }),
+    ]);
+    const dosFilasOk = dosRuts.length === 2 && new Set(dosRuts.map((r) => r.id)).size === 2;
+    // (e) SIN RUT EN EL EVENTO se cae al nombre, y no se rompe nada: es el respaldo, no el camino.
+    const sinRut = agruparInboundPorCliente([ev({ id: "e7", cedente: "SOLO NOMBRE", rutEmisor: "", opId: "", pagador: "P", rutRecep: "", monto: 1e6 })]);
+    const respaldoOk = sinRut.length === 1 && sinRut[0].cliente === "SOLO NOMBRE" && typeof sinRut[0].id === "string" && sinRut[0].id.length > 0;
+    // (f) Y LO QUE LA FILA HABILITA: con `rutEmisor` y deudores con `rut`, `capacidadDeudores` ya no devuelve el
+    //     vacío por su guarda — clasifica a los dos deudores en algún tramo (suman 2), que es lo que en pantalla
+    //     salía 0/0/0 bajo «2 deudores».
+    const cap = capacidadDeudores((fila.deudores || []).map((d) => ({ rut: d.rut, prime: false, n: d.facturas, monto: d.monto })), fila.rutEmisor);
+    const capOk = !!cap && cap.primeConLinea.n + cap.otrosConLinea.n + cap.sinLinea.n === 2;
+    // (g) Y SIN RUT DEL CLIENTE EL DESGLOSE SIGUE CUADRANDO («eso siempre debiera de cuadrar», mismo día, mirando
+    //     «7 deudores» con 0/0/0): nadie puede tener línea, así que el deudor va a «sin línea» con todo su monto — no
+    //     al vacío. El vacío queda sólo para cero deudores.
+    const capSinRut = capacidadDeudores([{ rut: "", prime: false, n: 1, monto: 1e6 }], "");
+    const sinRutOk = !!capSinRut && capSinRut.sinLinea.n === 1 && capSinRut.sinLinea.monto === 1e6 && capSinRut.primeConLinea.n + capSinRut.otrosConLinea.n === 0;
+    const ceroOk = capacidadDeudores([], "").sinLinea.n === 0;
+    ok("178 las filas «Sin clasificar» del tubo se juntan por RUT del cedente —no por nombre—, llevan el rutEmisor y el opId del evento como id, sus deudores llevan RUT y se juntan por RUT, el nombre queda sólo de respaldo, y el desglose de capacidadDeudores cuadra con el encabezado: sin RUT del cliente los N deudores van a «sin línea», no a 0/0/0",
+       unaFila && identidadOk && deudoresOk && unDeudorOk && dosFilasOk && respaldoOk && capOk && sinRutOk && ceroOk,
+       `una fila por RUT ${unaFila} (${dosFormas.length}) · identidad ${identidadOk} (id «${fila.id}» · rut «${fila.rutEmisor}») · deudores con RUT ${deudoresOk} · un deudor por RUT ${unDeudorOk} · dos RUT = dos filas ${dosFilasOk} (${dosRuts.length}) · respaldo por nombre ${respaldoOk} · capacidad clasifica ${capOk} (${cap ? cap.primeConLinea.n + "/" + cap.otrosConLinea.n + "/" + cap.sinLinea.n : "—"}) · sin RUT los N van a sin línea ${sinRutOk} · cero deudores = vacío ${ceroOk}`);
   }
 
   console.log(out.join("\n"));

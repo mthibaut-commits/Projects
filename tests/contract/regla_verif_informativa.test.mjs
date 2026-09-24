@@ -67,7 +67,7 @@ export function auditarRegla59(src) {
   if (!/<VerificacionTab deal=\{deal\} facturasOp=\{deal\.facturasOp \|\| \[\]\} informativo=\{!verifAccionable\}/.test(can))
     fallos.push("`VerificacionTab` no recibe `informativo={!verifAccionable}`: sin ese dato el tab no puede saber si está mirando o trabajando");
 
-  const vt = cuerpoDe(src, "function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoConfirmada, usuario, tasaDe }) {");
+  const vt = cuerpoDe(src, "function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoConfirmada, usuario }) {") // re-anclado el 24-09-2026: `tasaDe` se fue con la columna Tasa (pedido del usuario);
   if (!vt) {
     fallos.push("`VerificacionTab` no declara `informativo` en su firma");
     return fallos;
