@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-24T01:30:00Z
+timestamp: 2026-09-24T06:50:00Z
 ---
 
 # Estado actual
@@ -41,9 +41,10 @@ tipo · folio · emisión · vencimiento · monto con estado en tres valores— 
 Y **regla 83 · ADR-0025 · caso 179**: el nivel de una excepción se calcula UNA vez —la versión guardaba el del tramo y la
 solicitud, el hilo y la bandeja el escalado por monto: por eso el Jefe de Operaciones veía «(N1)» en la tarjeta, nada en
 la bandeja y ningún mensaje— ([log](./2026-09-24_un_nivel_por_excepcion.md)).
+Y el **caso 138 (CRY-01) cazó un flaky del FUENTE** (177/178 sobre `b4a5b17`): `emitirOtp` leía `Date.now()` dos veces y `exp − emitido`
+dejaba de ser el TTL al cambiar el milisegundo; hoy lee el reloj una vez ([log](./2026-09-24_una_lectura_del_reloj.md)).
 
 > ## 🎯 Siguiente paso
->
 > 1. **Pregunta abierta al usuario (24-09):** ¿un aviso a los aprobadores **al publicar** la oferta, además de la
 >    solicitud (regla 66) y la firma (regla 50)? Hoy no existe por diseño; sería un T2 en `cerrarOferta`. Y si el Jefe
 >    de Operaciones (N3) debe aprobar operaciones críticas, se baja el piso en `PISO_ATRIB_MONTO` (Mantenedores), no en código.
@@ -51,13 +52,12 @@ la bandeja y ningún mensaje— ([log](./2026-09-24_un_nivel_por_excepcion.md)).
 >    **G-23** · **G-18** · **G-27** · **G-28** · **G-05**; **G-29** queda como T2.
 > 3. **Lo demás**: selector de sesión angosto con elipsis · chip «Negociación» tras enviar a comité · `.bat` · O01 · 28 · 13-quater · `pipeline.zip`.
 
-## En vuelo · nada: todo lo del 24-09 entró a `main` (`b4a5b17` y siguientes)
+## En vuelo · `claude/sharp-hypatia-7wru5g`: el arreglo del caso 138 (T2), verificado completo, por mezclar a `main`
 **Antes de modificar se integra `main`** (`node sincronizar_main.mjs`, paso 0) y se verifica el árbol MEZCLADO, no la rama.
 
-## Bloqueos · del usuario, desde Windows
-El relay git bloquea el BORRADO y `refs/tags/*` con **HTTP 403** (los pushes normales funcionan; el MCP tampoco expone
-borrado). Queda **el tag `v0.1.0`** sobre `bd14091` y borrar las dos ramas ya integradas. Se quedan `main`,
-`respaldo/main-2026-09-17` (no se toca) y `claude/local-mauricio-20260910`, ÚNICA copia del estado local del 10-09.
+## Bloqueos · del usuario, desde Windows: el relay git bloquea el BORRADO y `refs/tags/*` con **HTTP 403**
+Los pushes normales funcionan y el MCP tampoco expone borrado. Queda **el tag `v0.1.0`** sobre `bd14091` y borrar las dos
+ramas ya integradas. Se quedan `main`, `respaldo/main-2026-09-17` (no se toca) y `claude/local-mauricio-20260910`, ÚNICA copia del 10-09.
 
 ## Deudas anotadas (no bloquean, no olvidar)
 1. **Perder dejó de ser un destino manual** (regla 80): el gesto es «Rechazar». Para perder arrastrando habría que abrir

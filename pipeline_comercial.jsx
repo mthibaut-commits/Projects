@@ -6798,7 +6798,9 @@ const otpHash = (neg, sal, code) => sha256Hex("otp$" + neg + "$" + sal + "$" + c
 async function emitirOtp(neg) {
   const code = otpAleatorio(OTP_LARGO);
   const sal = salAleatoria();
-  OTP_STORE[neg] = { alg: HASH_ALG, sal, hash: await otpHash(neg, sal, code), exp: Date.now() + OTP_TTL_MS, usado: false, emitido: Date.now() };
+  // UNA lectura del reloj: con dos `Date.now()` el milisegundo podía cambiar entre `exp` y `emitido`, y el caso 138 lo cazó (exp − emitido ≠ TTL).
+  const ahora = Date.now();
+  OTP_STORE[neg] = { alg: HASH_ALG, sal, hash: await otpHash(neg, sal, code), exp: ahora + OTP_TTL_MS, usado: false, emitido: ahora };
   if (!SUBTLE)
     logSys("error", "app", "Web Crypto no disponible: el OTP quedó con un hash NO criptográfico. Revisar el contexto seguro (https/localhost).", {
       alg: HASH_ALG,
