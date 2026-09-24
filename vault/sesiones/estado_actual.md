@@ -44,7 +44,7 @@ la bandeja y ningún mensaje— ([log](./2026-09-24_un_nivel_por_excepcion.md)).
 oportunidad es UNA lista (`poolOportunidad`) y la fila del tubo cuenta lo mismo que «Todo lo disponible» del detalle
 ([log](./2026-09-24_la_oportunidad_es_una_sola_lista.md)). Y **regla 85 · ADR-0026 · caso 181**: el corte del día lee el
 estado del proceso —versión emitida o pre-evaluación— y ya no elimina la operación que el ejecutivo trabaja en el detalle
-([log](./2026-09-24_el_corte_lee_el_proceso.md)).
+([log](./2026-09-24_el_corte_lee_el_proceso.md)). Y la **tarjeta de otorgamiento termina en la banda** («Modificar solicitud» abre un panel lateral; [log](./2026-09-24_la_tarjeta_termina_en_la_banda.md)).
 
 > ## 🎯 Siguiente paso
 >

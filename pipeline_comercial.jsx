@@ -10887,6 +10887,13 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     const nr = rolDeAreaNivel(x.area, nivelDe(x));
     const otraArea = false; // el área ya la pone la regla: nunca diverge (INC-03 resuelto)
     const tip = `${x.cond} · Tramo ${typeof x.tierIdx === "number" ? x.tierIdx + 1 : "—"}`;
+    // EN ESPERA, ARRIBA A LA DERECHA (24-09-2026, pedido del usuario: «achícala verticalmente, ya que se redistribuyó
+    // el contenido de la última línea»). «En espera del visto bueno de …» iba en una cuarta línea junto al botón
+    // «Agregar información»; ahora ocupa el lado derecho de la cabecera —donde estuvo la píldora— y el botón pasó a
+    // la banda de la solicitud como «Modificar solicitud». La tarjeta pierde una línea. Es la condición de la rama
+    // (C) de abajo: hay solicitud vigente, nadie la visó y quien mira no puede visarla.
+    const solCab = solVigente(SOLICITUD_EXC[deal.id] || {}, x.stKey);
+    const enEspera = x.disp === "excepcion" && !!solCab && excSinVisar(visSt, x.stKey) && !(x.regla && puedeAprobarExc(usuario, x.regla, nivelDe(x)));
     return (
       <div
         key={(kpref || "") + x.n}
@@ -10924,6 +10931,15 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
             >
               {dLbl[x.disp]}
               {x.nivel ? " · N" + x.nivel : ""}
+            </span>
+          )}
+          {enEspera && (
+            <span className="shrink-0 t9" style={{ color: C.sub }}>
+              En espera del visto bueno de{" "}
+              <b style={{ color: "#5B21D6" }}>
+                {nr.rol} (N{nivelDe(x)})
+              </b>
+              .
             </span>
           )}
         </div>
@@ -10987,8 +11003,23 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                   (N5)» junto a un badge que exigía «N4 · Jefe de Riesgo»: dos destinatarios para la misma
                   excepción, y el vigente es el del badge. Esta línea responde quién pidió y cuándo, que es
                   historia y no cambia; a quién le toca lo dice el badge, que se calcula en vivo. */}
-                <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>
-                  📨 Aprobación solicitada por {sol.por} · {sol.fecha}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>
+                    📨 Aprobación solicitada por {sol.por} · {sol.fecha}
+                  </div>
+                  {/* MODIFICAR ABRE EL PANEL LATERAL (24-09-2026, pedido del usuario): sumar un comentario o un
+                      respaldo a la solicitud ya enviada se hace en un panel, no en un formulario embebido que
+                      estiraba la tarjeta. Sólo para quien pidió: el apoderado resuelve, no modifica. */}
+                  {!estado && !puedeVisar && (
+                    <button
+                      onClick={() => setEF("amp:" + x.stKey, { open: true })}
+                      className="shrink-0 t9 font-medium"
+                      style={{ color: C.ink }}
+                      title="Abre el panel lateral para sumar un comentario o un respaldo a la solicitud ya enviada"
+                    >
+                      Modificar solicitud
+                    </button>
+                  )}
                 </div>
                 {sol.comentario && (
                   <div className="mt-0.5 t9" style={{ color: C.sub }}>
@@ -11172,47 +11203,59 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
               const ak = "amp:" + x.stKey;
               const af = excForm[ak] || {};
               const hayAmp = !!((af.msg || "").trim() || (af.archs && af.archs.length));
+              // LA TARJETA TERMINA EN LA BANDA (24-09-2026): el «En espera…» vive en la cabecera y «Modificar
+              // solicitud» en la banda; la ampliación se escribe en un PANEL LATERAL, con el mismo molde que el
+              // editor de reglas y la mesa (regla 53), y se cierra por la X, por Cancelar o clic afuera.
               return (
                 <>
                   {solBlock}
-                  {!af.open ? (
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      <span className="t9" style={{ color: C.sub }}>
-                        En espera del visto bueno de{" "}
-                        <b style={{ color: "#5B21D6" }}>
-                          {nr.rol} (N{nivelDe(x)})
-                        </b>
-                        .
-                      </span>
-                      <button
-                        onClick={() => setEF(ak, { open: true })}
-                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold"
-                        style={{ border: `1px solid ${C.indigo}`, color: C.indigo, backgroundColor: "#fff" }}
+                  {af.open && (
+                    <>
+                      <div className="fixed inset-0 z-40 ovl" onClick={() => setEF(ak, { open: false })} />
+                      <aside
+                        className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col bg-white shadow-2xl"
+                        style={{ borderLeft: `1px solid ${C.line}` }}
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        📎 Agregar información
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="mt-1.5 rounded-md p-2" style={{ border: "1px solid #DDD6FE", backgroundColor: "#F5F3FF" }}>
-                      <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>
-                        Agregar información para el {nr.rol} (N{nivelDe(x)})
-                      </div>
-                      <div className="mt-0.5 t9" style={{ color: C.sub }}>
-                        Se <b>suma</b> a lo ya enviado —no reemplaza la solicitud— y le llega al apoderado con tu nombre y la hora.
-                      </div>
-                      <textarea
-                        value={af.msg || ""}
-                        onChange={(e) => setEF(ak, { msg: e.target.value })}
-                        placeholder="Antecedente, aclaración o descripción del respaldo que adjuntas…"
-                        className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2"
-                        style={{ border: `1px solid ${C.line}`, minHeight: 48, backgroundColor: "#fff", color: C.ink }}
-                      />
-                      {archChips(ak, af.archs)}
-                      <div className="mt-1.5 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-start justify-between p-5" style={{ borderBottom: `1px solid ${C.line}` }}>
+                          <div className="min-w-0 flex-1">
+                            <div className="t11 font-medium" style={{ color: C.faint }}>
+                              #{x.n} · {x.nombre}
+                            </div>
+                            <div className="mt-1 text-xl font-semibold" style={{ color: C.ink }}>
+                              Modificar solicitud
+                            </div>
+                            <div className="mt-1 t10" style={{ color: C.sub }}>
+                              Para el{" "}
+                              <b style={{ color: "#5B21D6" }}>
+                                {nr.rol} (N{nivelDe(x)})
+                              </b>
+                              . Se <b>suma</b> a lo ya enviado —no reemplaza la solicitud— y le llega al apoderado con tu nombre y la hora.
+                            </div>
+                          </div>
+                          <button onClick={() => setEF(ak, { open: false })} className="ml-2 rounded-md p-1 hover:bg-stone-100" title="Cerrar">
+                            <X size={18} style={{ color: C.sub }} />
+                          </button>
+                        </div>
+                        <div className="flex-1 space-y-3 overflow-y-auto p-5">
+                          <div className="rounded-md px-2 py-1.5 t9" style={{ backgroundColor: "#F1ECFF", color: "#5B21D6" }}>
+                            📨 Solicitada por {sol.por} · {sol.fecha}
+                            {sol.comentario ? ` · “${sol.comentario}”` : ""}
+                          </div>
+                          <textarea
+                            value={af.msg || ""}
+                            onChange={(e) => setEF(ak, { msg: e.target.value })}
+                            placeholder="Antecedente, aclaración o descripción del respaldo que adjuntas…"
+                            className="w-full rounded-md p-2 t10 outline-none focus:ring-2"
+                            style={{ border: `1px solid ${C.line}`, minHeight: 120, backgroundColor: "#fff", color: C.ink }}
+                          />
+                          {archChips(ak, af.archs)}
+                          {adjuntarLabel(ak)}
+                        </div>
+                        <div className="flex items-center justify-end gap-1.5 p-5" style={{ borderTop: `1px solid ${C.line}` }}>
                           <button
                             onClick={() => setEF(ak, { open: false, msg: "", archs: [] })}
-                            className="rounded-md px-2 py-1 t9 font-medium"
+                            className="rounded-md px-3 py-1.5 t10 font-medium"
                             style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}
                           >
                             Cancelar
@@ -11226,15 +11269,14 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                             }}
                             disabled={!hayAmp}
                             title={hayAmp ? undefined : "Escribe un comentario o adjunta un respaldo"}
-                            className="inline-flex items-center gap-1 rounded-md px-3 py-1 t9 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ backgroundColor: C.indigo }}
                           >
-                            <Send size={11} /> Enviar
+                            <Send size={12} /> Enviar
                           </button>
                         </div>
-                        {adjuntarLabel(ak)}
-                      </div>
-                    </div>
+                      </aside>
+                    </>
                   )}
                 </>
               );
