@@ -8975,6 +8975,76 @@
        `excepciones ${critico.vivo.length} vivas / ${critico.snap.length} en versión · mismas reglas ${mismasReglas} · igual crítico ${igualCritico} · igual leve ${igualLeve} · crítico escala ${escala} (${muestra(critico)}) · leve no escala ${noEscala} (${muestra(leve)}) · respaldo único ${respaldoOk} · destinatarios coinciden ${dests}`);
   }
 
+  // 180 · LA OPORTUNIDAD ES UNA SOLA LISTA (regla 84; reportado por el usuario el 24-09-2026: «3 deudores · 3 facturas»
+  // en el tubo y 23 en el detalle). `poolOportunidad` es la oferta más las candidatas —pool de la operación y libro del
+  // cliente en la ventana—, sin repetir folios y sólo las agregables; la fila del tubo (`analisisDeudoresDeDeal`) cuenta
+  // exactamente esa lista. Se prueba sobre un cliente REAL del libro (A1), sin inventar documentos.
+  {
+    // Un emisor con al menos tres facturas a crédito comprables en el libro.
+    const emisor = [...libroPorEmisor().entries()].find(([, docs]) => docs.filter((f) => f.credito && !f.notaCredito && !f.reclamada).length >= 3) || null;
+    const rut180 = emisor ? emisor[0] : "";
+    const libro = emisor ? emisor[1] : [];
+    const buenas = libro.filter((f) => f.credito && !f.notaCredito && !f.reclamada);
+    const base = { id: "T-180", rutEmisor: rut180, cliente: "Cliente 180", facturasOp: [], facturasDisponibles: [] };
+    const pool0 = poolOportunidad(base);
+    const an0 = analisisDeudoresDeDeal(base);
+    const clave = (f) => (f.id != null ? f.id : f.folio);
+    // (a) Sin duplicados y sólo agregables: cada documento entra una vez y ninguno está bloqueado.
+    const sinDup = new Set(pool0.map(clave)).size === pool0.length;
+    const soloBuenas = pool0.length > 0 && pool0.every((f) => estadoCandidata(f, base).agregable);
+    // (b) LA FILA DEL TUBO CUENTA ESA MISMA LISTA: mismas facturas y mismo monto.
+    const montoPool = +pool0.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1);
+    const filaOk = !!an0 && an0.nFacturas === pool0.length && Math.abs(an0.monto - montoPool) < 1;
+    // (c) Una factura de la operación ya BLOQUEADA (reclamada) no cuenta: es lo que «buenas facturas» quiere decir.
+    const bloq = buenas[0] ? { ...buenas[0], id: "T-180-bloq", folio: 99900001, reclamada: true } : null;
+    const conBloq = { ...base, facturasDisponibles: bloq ? [bloq] : [] };
+    const bloqOk = !!bloq && poolOportunidad(conBloq).length === pool0.length && (analisisDeudoresDeDeal(conBloq) || {}).nFacturas === pool0.length;
+    // (d) Una factura del libro que ya está EN LA OFERTA se cuenta una sola vez: la oferta no la duplica.
+    const enOferta = { ...base, facturasOp: pool0.slice(0, 1) };
+    const dedupOk = pool0.length > 0 && poolOportunidad(enOferta).length === pool0.length && (analisisDeudoresDeDeal(enOferta) || {}).nFacturas === pool0.length;
+    // (e) Una factura NUEVA del pool de la operación (fuera del libro por folio) sí suma una.
+    const nueva = buenas[0] ? { ...buenas[0], id: "T-180-nueva", folio: 99900002, reclamada: false, notaCredito: false, porCupo: true } : null;
+    const conNueva = { ...base, facturasDisponibles: nueva ? [nueva] : [] };
+    const sumaOk = !!nueva && poolOportunidad(conNueva).length === pool0.length + 1 && (analisisDeudoresDeDeal(conNueva) || {}).nFacturas === pool0.length + 1;
+    ok("180 la oportunidad es UNA sola lista —la oferta más las candidatas del pool de la operación y del libro del cliente, sin repetir folios y sólo las agregables— y la fila del tubo cuenta exactamente esa lista: mismas facturas y mismo monto que el arranque del detalle",
+       !!emisor && sinDup && soloBuenas && filaOk && bloqOk && dedupOk && sumaOk,
+       `emisor ${rut180 || "—"} · pool ${pool0.length} · sin duplicados ${sinDup} · sólo agregables ${soloBuenas} · la fila cuenta lo mismo ${filaOk} (${an0 ? an0.nFacturas + " fact. · M$" + an0.monto : "—"} vs ${pool0.length} · M$${montoPool}) · la bloqueada no cuenta ${bloqOk} · en la oferta no se duplica ${dedupOk} · la nueva suma ${sumaOk}`);
+  }
+
+  // 181 · EL CORTE LEE EL ESTADO DEL PROCESO, NO SÓLO LA COPIA DE LA PESTAÑA (regla 85, ADR-0026; reportado por el usuario
+  // el 24-09-2026: Paula Reyes N5 podía visar en el detalle y la mesa le decía 0). La simulación ocurre en la pestaña del
+  // detalle; si el corte pasa antes de que el aviso llegue, la copia del tubo no tiene `simulado` ni etapa Oferta. La
+  // versión emitida (repositorio, regla 72) y la pre-evaluación pedida (repositorio) son hechos del proceso: con
+  // cualquiera de los dos la operación NO se elimina.
+  {
+    const mk = (id, extra) => ({ id, _inbound: true, stage: "prospeccion", cliente: "Cliente 181", rutEmisor: "76.181.181-1", facturasOp: [],
+      facturasDisponibles: [{ id: id + "-f1", folio: 1811, monto: 1e6, deudor: "Deudor 181" }], ...extra });
+    const V = mk("OP-V181"), P = mk("OP-P181"), N = mk("OP-N181");
+    const guardV = SIM_VERSIONS["OP-V181"], guardP = PRE_EVAL["OP-P181"];
+    let r, sinOfertaV, conVersionV, conPreP, sinNadaN;
+    try {
+      // (a) ANTES: sin versión ni pre-evaluación, las tres son «sin oferta».
+      sinOfertaV = tieneOferta(V) === false && tieneGestion(V) === false;
+      // (b) La VERSIÓN emitida en el repositorio hace que la copia sin `simulado` tenga oferta, y el corte no la toca.
+      SIM_VERSIONS["OP-V181"] = [{ v: 1, rev: 0, res: [], ts: Date.now() }];
+      conVersionV = tieneOferta(V) === true && tieneGestion(V) === true;
+      // (c) La PRE-EVALUACIÓN pedida no es oferta, pero es gestión: tampoco se elimina.
+      PRE_EVAL["OP-P181"] = { por: "CR", porNombre: "Carla Rivas", ts: "x" };
+      conPreP = tieneOferta(P) === false && tieneGestion(P) === true;
+      r = corteDelDia([V, P, N]);
+      sinNadaN = r.eliminadas.map((d) => d.id).join(",") === "OP-N181" && r.quedan.map((d) => d.id).join(",") === "OP-V181,OP-P181" && r.gestionadas === 2;
+    } finally {
+      if (guardV === undefined) delete SIM_VERSIONS["OP-V181"]; else SIM_VERSIONS["OP-V181"] = guardV;
+      if (guardP === undefined) delete PRE_EVAL["OP-P181"]; else PRE_EVAL["OP-P181"] = guardP;
+    }
+    // (d) Y DESPUÉS de limpiar, el corte vuelve a eliminarlas: la decisión sale del repositorio, no de la copia.
+    const r2 = corteDelDia([V, P, N]);
+    const limpioOk = r2.eliminadas.length === 3 && r2.quedan.length === 0;
+    ok("181 al corte del día la oportunidad con VERSIÓN emitida en el repositorio (la oferta simulada en la pestaña del detalle) o con PRE-EVALUACIÓN pedida no se elimina aunque la copia del tubo siga en Prospección sin simulado; sin ninguna de las dos, sí",
+       sinOfertaV && conVersionV && conPreP && sinNadaN && limpioOk,
+       `sin nada: sin oferta ${sinOfertaV} · con versión: tiene oferta y no se corta ${conVersionV} · con pre-evaluación: gestionada ${conPreP} · corte ${sinNadaN} (elimina ${r ? r.eliminadas.map((d) => d.id).join(",") : "—"} · quedan ${r ? r.quedan.map((d) => d.id).join(",") : "—"}) · limpio vuelve a cortar ${limpioOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
