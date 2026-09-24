@@ -6846,7 +6846,9 @@ const otpHash = (neg, sal, code) => sha256Hex("otp$" + neg + "$" + sal + "$" + c
 async function emitirOtp(neg) {
   const code = otpAleatorio(OTP_LARGO);
   const sal = salAleatoria();
-  OTP_STORE[neg] = { alg: HASH_ALG, sal, hash: await otpHash(neg, sal, code), exp: Date.now() + OTP_TTL_MS, usado: false, emitido: Date.now() };
+  // UNA lectura del reloj: con dos `Date.now()` el milisegundo podía cambiar entre `exp` y `emitido`, y el caso 138 lo cazó (exp − emitido ≠ TTL).
+  const ahora = Date.now();
+  OTP_STORE[neg] = { alg: HASH_ALG, sal, hash: await otpHash(neg, sal, code), exp: ahora + OTP_TTL_MS, usado: false, emitido: ahora };
   if (!SUBTLE)
     logSys("error", "app", "Web Crypto no disponible: el OTP quedó con un hash NO criptográfico. Revisar el contexto seguro (https/localhost).", {
       alg: HASH_ALG,
@@ -29962,7 +29964,9 @@ function destinatariosTarea(t) {
 }
 function addPanelTarea(t) {
   const dias = t.dias || 1;
-  PANEL_TAREAS.unshift({ id: `PT-${PANEL_TAREAS_SEQ++}`, ts: Date.now(), venceTs: Date.now() + dias * 86400000, hecha: false, para: [], ops: [], ...t });
+  // UNA lectura del reloj: `venceTs` deriva de `ts` y con dos `Date.now()` podían diferir en un milisegundo (el patrón que cazó el caso 138 en `emitirOtp`).
+  const ahora = Date.now();
+  PANEL_TAREAS.unshift({ id: `PT-${PANEL_TAREAS_SEQ++}`, ts: ahora, venceTs: ahora + dias * 86400000, hecha: false, para: [], ops: [], ...t });
 }
 // Bitácora de gestión: comentarios que el ejecutivo anota por ítem de tarea (id = dealId para
 // prioridades, PT-x para tareas asignadas). Persistente a nivel de módulo durante la sesión.

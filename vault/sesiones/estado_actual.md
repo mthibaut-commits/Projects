@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-24T07:45:00Z
+timestamp: 2026-09-24T08:00:00Z
 ---
 
 # Estado actual
@@ -45,16 +45,16 @@ estado del proceso —versión emitida o pre-evaluación— y ya no elimina la o
 ([log](./2026-09-24_el_corte_lee_el_proceso.md)). Y la **tarjeta de otorgamiento termina en la banda** («Modificar solicitud» abre un panel lateral; [log](./2026-09-24_la_tarjeta_termina_en_la_banda.md)).
 Y **la v2 de `datamart-ui` queda instalada** («usa la V2»), con `references/components-extended.md`, la consigna en `CLAUDE.md` (diseño en línea
 con `datamart-ui` v2, pulido con `emil-design-eng`, manda la regla 63) y el gate `skills_propias.test.mjs` ([log](./2026-09-24_la_v2_de_datamart_ui_se_instala.md)).
+Y el **caso 138 (CRY-01) cazó un flaky del FUENTE** (177/178 sobre `b4a5b17`): `emitirOtp` leía `Date.now()` dos veces por registro y `exp − emitido` dejaba de ser el TTL al cambiar el milisegundo; hoy lee el reloj UNA vez, y `addPanelTarea` (`ts`/`venceTs`) igual, por pedido del usuario ([log](./2026-09-24_una_lectura_del_reloj.md)).
 
 > ## 🎯 Siguiente paso
->
 > 1. **Pregunta abierta al usuario (24-09):** ¿un aviso a los aprobadores **al publicar** la oferta, además de la solicitud (regla 66)
 >    y la firma (regla 50)? Hoy no existe por diseño; sería un T2 en `cerrarOferta`. Y si el Jefe de Operaciones (N3) debe aprobar
 >    operaciones críticas, se baja el piso en `PISO_ATRIB_MONTO` (Mantenedores), no en código.
 > 2. **Cinco gaps del curse decididos el 23-09 y sin implementar** (matriz §2.2, verbatim del usuario): G-23 · G-18 · G-27 · G-28 · G-05; G-29 como T2.
 > 3. **Lo demás**: selector de sesión angosto · chip «Negociación» tras comité · `.bat` · O01 · 28 · 13-quater · `pipeline.zip` · ¿el KPI del tubo suma la oportunidad completa (regla 84)?
 
-## En vuelo · nada: todo lo del 24-09 entró a `main`, la v2 de `datamart-ui` incluida (`a005e8f` y su mezcla)
+## En vuelo · nada: todo lo del 24-09 entró a `main`, la v2 de `datamart-ui` y la lectura única del reloj incluidas
 **Antes de modificar se integra `main`** (`node sincronizar_main.mjs`, paso 0) y se verifica el árbol MEZCLADO, no la rama.
 
 ## Bloqueos · del usuario, desde Windows
