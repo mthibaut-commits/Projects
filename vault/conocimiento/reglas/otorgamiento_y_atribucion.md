@@ -181,3 +181,32 @@ timestamp: 2026-09-17T15:29:14Z
       a levantar está pendiente, la marcada no justifica ni se reactiva, la solicitud nueva con historia; la decisión pura
       con entradas plantadas) y `regla_70.test.mjs` (la llamada tras la versión, la decisión que sólo marca, la mutación que
       no borra, ningún lector suelto, la historia, la pantalla y el balde propio: trece sondas). La pantalla completa sigue por e2e (CP-124).
+
+83. **El nivel de una excepción se calcula UNA vez, con el monto de la operación, y toda pantalla lo lee** (24-09-2026,
+    ADR-0025; reportado por el usuario con la sesión en Jefe de Operaciones: «estoy logueado como el jefe de operaciones y
+    no aparece mis excepciones en el menú Otorgamiento», «tampoco se enviaron los mensajes»). La tarjeta del detalle decía
+    «En espera del visto bueno de **Jefe de Operaciones (N1)**» y «**(N3)**», la bandeja «48 pendientes, **ninguna requiere
+    tu atribución** · 3 en Operaciones **N4**», y el hilo de la solicitud le llegó a otro.
+    - **Medido en el detalle real** (Directorio, fila 0, «Marcar sin comentarios y solicitar (58)»): las 58 solicitudes se
+      guardaron con **N4 / N5 / N3** —el piso *crítico* de operaciones / riesgo / comercial, porque la operación pasa de
+      M$120— y el hilo «Aprobación de excepciones» quedó con participantes **CR, OP, SR, GG**: `hilosDeUsuario("JO") = 0`.
+      Las tarjetas del mismo tab decían **N1 / N3 / N2 / N4 / N5**: los niveles del **tramo** de cada regla, sin escalar.
+    - **La causa era una ausencia.** `evaluarOtorgItems` escala el nivel por el monto (`conPiso` → `nivelExigido`, INC-05)
+      y `snapVersionCli` —que emite la versión que las tarjetas leen (`ver.res`)— guardaba `nivel: e.nivel`, el del tramo.
+      Dos evaluaciones del mismo catálogo con dos niveles, y cada pantalla leía una: la tarjeta la versión; la solicitud,
+      `codigosAprobadoresDe`, la tarea del panel y «Sólo mis pendientes» de la bandeja, la evaluación viva. Y para un nivel
+      AUSENTE había 36 sitios con `|| 4` y 4 con `|| 1`: el mismo ítem se llamaba «Operaciones (N4)» y «Jefe de Operaciones
+      (N1)» según la pantalla.
+    - **Ahora:** `snapVersionCli` guarda `nivel: nivelExigido(r.area, e.nivel, monto)` para cada excepción, con
+      `monto = deal.monto` —el mismo de `evaluarOtorgItems`—, y conserva el del tramo en `nivelTramo`. Misma función,
+      mismo monto, mismo nivel: la tarjeta, la solicitud, el hilo, la tarea y la bandeja nombran al mismo aprobador. Y el
+      respaldo del nivel ausente es UNO, `nivelDe(x)` (`x.nivel || 4`): un ítem sin nivel es un defecto, y el respaldo
+      existe para que la pantalla no se caiga, no para decidir.
+    - **Lo que esto NO cambia:** la política. Para una operación sobre M$120 el piso de Operaciones es N4
+      (`PISO_ATRIB_MONTO`, editable en Mantenedores), así que el Jefe de Operaciones (N3) **no** es el aprobador — y ahora
+      ninguna pantalla le dice lo contrario. Si la política debe ser otra, cambia en la tabla, no en el código. Las
+      versiones emitidas antes conservan su `nivel` (regla 72); al re-evaluar, la nueva sale con el exigido.
+    - Caso **179** (mismo nivel en la versión y en vivo, regla por regla, en el tramo crítico y en el leve; el crítico
+      escala y el leve no; el tramo viaja; el respaldo es único; y los destinatarios calculados con el nivel de la
+      tarjeta son los de la evaluación viva) y `regla_83.test.mjs` (la escalada en el snapshot con el monto de la
+      operación, la misma en vivo, `nivelDe` y ningún `|| 1` / `|| 4` suelto; cuatro sondas).

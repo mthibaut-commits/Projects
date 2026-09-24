@@ -86,7 +86,7 @@ export function auditarRegla48(src) {
   //     vacaciones) y no de `ATRIB_USUARIO`, que es sólo quién existe.
   const ca = cuerpoDe(src, "function codigosAprobadoresDe(excPend, padron) {");
   if (ca) {
-    if (!/!u\.superAdmin && puedeAprobarExc\(u\.code, regla, \(x && x\.nivel\) \|\| 4, pad\)/.test(canonico(ca)))
+    if (!/!u\.superAdmin && puedeAprobarExc\(u\.code, regla, nivelDe\(x\), pad\)/.test(canonico(ca)))
       fallos.push("`codigosAprobadoresDe` no excluye al super-administrador o no decide con `puedeAprobarExc`: el super-admin puede firmar todo, así que estaría en cada hilo del sistema");
     if (/\bATRIB_USUARIO\b/.test(ca))
       fallos.push("`codigosAprobadoresDe` recorre `ATRIB_USUARIO`: ése es el padrón de quién EXISTE y se salta los reemplazos por vacaciones (regla 19) — quien cubre a un ausente no recibiría el aviso");
@@ -162,7 +162,8 @@ const MUTANTES = {
     re: /no reusa el hilo/,
   },
   "el super-admin entra en cada hilo": {
-    src: jsx.replace("      if (!u.superAdmin && puedeAprobarExc(u.code, regla, (x && x.nivel) || 4, pad)) codes.add(u.code);", "      if (puedeAprobarExc(u.code, regla, (x && x.nivel) || 4, pad)) codes.add(u.code);"),
+    // re-anclado el 24-09-2026: el respaldo del nivel es `nivelDe` (regla 83)
+    src: jsx.replace("      if (!u.superAdmin && puedeAprobarExc(u.code, regla, nivelDe(x), pad)) codes.add(u.code);", "      if (puedeAprobarExc(u.code, regla, nivelDe(x), pad)) codes.add(u.code);"),
     re: /no excluye al super-administrador/,
   },
   "los destinatarios vuelven a salir de ATRIB_USUARIO": {

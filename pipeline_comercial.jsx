@@ -1886,6 +1886,11 @@ const gravedadPorMonto = (monto) => {
 const pisoPorMonto = (area, monto) => (PISO_ATRIB_MONTO[gravedadPorMonto(monto || 0)] || {})[area] || 1;
 // Nivel REALMENTE exigido para excepcionar: el del tramo o el que impone el monto, el que sea mayor.
 const nivelExigido = (area, nivelTramo, monto) => Math.max(nivelTramo || 1, pisoPorMonto(area, monto));
+// EL ÚNICO RESPALDO PARA UN NIVEL AUSENTE (regla 83). Había 36 sitios con `|| 4` y 4 con `|| 1`, así que el mismo ítem
+// sin nivel se llamaba «Operaciones (N4)» en una pantalla y «Jefe de Operaciones (N1)» en otra. Un ítem sin nivel es un
+// defecto —`evaluarOtorgItems` y `snapVersionCli` lo ponen siempre—; el respaldo existe para que la pantalla no se caiga,
+// no para decidir, y va al 4 porque exigir de más deja la operación esperando y exigir de menos la aprueba quien no debía.
+const nivelDe = (x) => (x && x.nivel) || 4;
 // ¿El usuario puede aprobar la excepción de esta regla? Basta que tenga, EN EL ÁREA que manda en ese
 // nivel, un nivel igual o superior al requerido. El responsable es quien tiene el nivel exacto, pero si
 // ese cargo está vacante —o la persona está de vacaciones— la jefatura del área lo toma: un Gerente
@@ -10609,13 +10614,13 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     // vieja, de un rol que cambió o de una atribución que se revocó, y la decisión de un apoderado es
     // evidencia regulatoria. En producción esto lo rechaza el resolver desde el rol del token —acá se
     // anticipa, que es lo que este cliente puede hacer—.
-    if (!puedeAprobarExc(usuario, x.regla, x.nivel || 4)) {
-      const req = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", x.nivel || 4);
+    if (!puedeAprobarExc(usuario, x.regla, nivelDe(x))) {
+      const req = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", nivelDe(x));
       registrarAuditoria({
         usuario: USERS[usuario] || usuario,
         modulo: "Otorgamiento · Visado",
         accion: "Decisión rechazada por atribución (OTG-01)",
-        glosa: `Intento de resolver la regla ${x.regla.n} de «${deal.cliente}» sin la atribución requerida (${req.rol} · N${x.nivel || 4})`,
+        glosa: `Intento de resolver la regla ${x.regla.n} de «${deal.cliente}» sin la atribución requerida (${req.rol} · N${nivelDe(x)})`,
         empresaId: deal.id,
         severidad: "alta",
         exito: false,
@@ -10645,13 +10650,13 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
       usuario: USERS[usuario] || usuario,
       modulo: "Visado Cliente (detalle)",
       accion: val === "aprobado" ? "Excepción aprobada" : "Excepción rechazada",
-      glosa: `Regla ${x.regla.n} · ${AREA_LBL[x.regla.area]} N${x.nivel || 4} · ${deal.cliente}${dtxt}${msg ? " · " + msg : ""}${arr.length ? " · " + arr.length + " adjunto(s)" : ""}`,
+      glosa: `Regla ${x.regla.n} · ${AREA_LBL[x.regla.area]} N${nivelDe(x)} · ${deal.cliente}${dtxt}${msg ? " · " + msg : ""}${arr.length ? " · " + arr.length + " adjunto(s)" : ""}`,
       exito: val === "aprobado",
     });
     logOtorgEvento(
       deal.id,
       USERS[usuario] || usuario,
-      `${USERS[usuario] || usuario} ${val === "aprobado" ? "aprobó" : "rechazó"} la excepción desde el detalle · regla #${x.regla.n} ${x.regla.nombre}${dtxt} (${AREA_LBL[x.regla.area]} N${x.nivel || 4})${arr.length ? " · con " + arr.length + " respaldo(s)" : ""}`,
+      `${USERS[usuario] || usuario} ${val === "aprobado" ? "aprobó" : "rechazó"} la excepción desde el detalle · regla #${x.regla.n} ${x.regla.nombre}${dtxt} (${AREA_LBL[x.regla.area]} N${nivelDe(x)})${arr.length ? " · con " + arr.length + " respaldo(s)" : ""}`,
       msg || "",
     );
     invalidarVisado();
@@ -10668,13 +10673,13 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     // vieja, de un rol que cambió o de una atribución que se revocó, y la decisión de un apoderado es
     // evidencia regulatoria. En producción esto lo rechaza el resolver desde el rol del token —acá se
     // anticipa, que es lo que este cliente puede hacer—.
-    if (!puedeAprobarExc(usuario, x.regla, x.nivel || 4)) {
-      const req = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", x.nivel || 4);
+    if (!puedeAprobarExc(usuario, x.regla, nivelDe(x))) {
+      const req = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", nivelDe(x));
       registrarAuditoria({
         usuario: USERS[usuario] || usuario,
         modulo: "Otorgamiento · Visado",
         accion: "Decisión rechazada por atribución (OTG-01)",
-        glosa: `Intento de resolver la regla ${x.regla.n} de «${deal.cliente}» sin la atribución requerida (${req.rol} · N${x.nivel || 4})`,
+        glosa: `Intento de resolver la regla ${x.regla.n} de «${deal.cliente}» sin la atribución requerida (${req.rol} · N${nivelDe(x)})`,
         empresaId: deal.id,
         severidad: "alta",
         exito: false,
@@ -10774,7 +10779,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     });
   });
   // Reglas pendientes que ESTE usuario puede visar según su atribución (para el badge rojo "para ti" por tab).
-  const puedeVisarX = (x) => reqAprob(x) && x.regla && puedeAprobarExc(usuario, x.regla, x.nivel || 4);
+  const puedeVisarX = (x) => reqAprob(x) && x.regla && puedeAprobarExc(usuario, x.regla, nivelDe(x));
   const cliMias = cliRules.filter(puedeVisarX).length;
   const deudGrupos = [...deudMap.values()];
   deudGrupos.forEach((g) => {
@@ -10831,7 +10836,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const reglaCard = (x, kpref) => {
     // El default del nivel es 4, el MISMO que usa `puedeAprobarExc` en esta tarjeta: con `|| 1` el badge
     // anunciaba el cargo de N1 mientras el permiso exigía N4, o sea dos niveles para el mismo tramo.
-    const nr = rolDeAreaNivel(x.area, x.nivel || 4);
+    const nr = rolDeAreaNivel(x.area, nivelDe(x));
     const otraArea = false; // el área ya la pone la regla: nunca diverge (INC-03 resuelto)
     const tip = `${x.cond} · Tramo ${typeof x.tierIdx === "number" ? x.tierIdx + 1 : "—"}`;
     return (
@@ -10922,7 +10927,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
             // «Ya no aplica» NO es una decisión vigente: si la regla volvió a levantar, la excepción está pendiente otra
             // vez y la solicitud marcada se muestra como ANTERIOR, no como la de hoy (regla 70).
             const estado = excSinVisar(visSt, x.stKey) ? undefined : visSt[x.stKey]; // "aprobado" | "rechazado" | undefined
-            const puedeVisar = x.regla && puedeAprobarExc(usuario, x.regla, x.nivel || 4);
+            const puedeVisar = x.regla && puedeAprobarExc(usuario, x.regla, nivelDe(x));
             const solTodas = SOLICITUD_EXC[deal.id] || {};
             const sol = solVigente(solTodas, x.stKey); // solicitud del ejecutivo (comentario + adjuntos)
             const solAnterior = solTodas[x.stKey] && solTodas[x.stKey].estado === VISADO_NO_APLICA ? solTodas[x.stKey] : null;
@@ -11127,7 +11132,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                       <span className="t9" style={{ color: C.sub }}>
                         En espera del visto bueno de{" "}
                         <b style={{ color: "#5B21D6" }}>
-                          {nr.rol} (N{x.nivel || 4})
+                          {nr.rol} (N{nivelDe(x)})
                         </b>
                         .
                       </span>
@@ -11142,7 +11147,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                   ) : (
                     <div className="mt-1.5 rounded-md p-2" style={{ border: "1px solid #DDD6FE", backgroundColor: "#F5F3FF" }}>
                       <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>
-                        Agregar información para el {nr.rol} (N{x.nivel || 4})
+                        Agregar información para el {nr.rol} (N{nivelDe(x)})
                       </div>
                       <div className="mt-0.5 t9" style={{ color: C.sub }}>
                         Se <b>suma</b> a lo ya enviado —no reemplaza la solicitud— y le llega al apoderado con tu nombre y la hora.
@@ -11194,7 +11199,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                   <span className="t9" style={{ color: C.sub }}>
                     Requiere visto bueno de{" "}
                     <b style={{ color: "#5B21D6" }}>
-                      {nr.rol} (N{x.nivel || 4})
+                      {nr.rol} (N{nivelDe(x)})
                     </b>
                     .
                   </span>
@@ -11210,7 +11215,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
             return (
               <div className="mt-1.5 rounded-md p-2" style={{ border: "1px solid #DDD6FE", backgroundColor: "#F5F3FF" }}>
                 <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>
-                  Solicitar aprobación al {nr.rol} (N{x.nivel || 4}) · comentario y respaldo
+                  Solicitar aprobación al {nr.rol} (N{nivelDe(x)}) · comentario y respaldo
                 </div>
                 <textarea
                   value={sf.msg || ""}
@@ -14163,7 +14168,7 @@ function DealDrawer({
                         puedeAprobarExc(
                           usuario,
                           REGLAS_CLIENTE.find((r) => r.n === e.n),
-                          e.nivel || 4,
+                          nivelDe(e),
                         ),
                       );
                     if (!misExc.length) return null;
@@ -24027,6 +24032,13 @@ function snapVersionCli(deal, rev, opts) {
   // Sólo reglas del CLIENTE (las de deudor se evalúan por deudor aparte en evaluarOtorgItems). Ya sin forzar el
   // disp: las reglas re-evaluables mejoran porque su VARIABLE se reparó arriba (consistente con el diff).
   const padron = padronAprobadores();
+  // EL NIVEL QUE GUARDA LA VERSIÓN ES EL EXIGIDO, NO EL DEL TRAMO (regla 83, ADR-0025; 24-09-2026, reportado por el
+  // usuario con la sesión en Jefe de Operaciones: la tarjeta decía «En espera del visto bueno de Jefe de Operaciones
+  // (N1)», la bandeja «48 pendientes, ninguna requiere tu atribución · 3 en Operaciones N4», y los mensajes le llegaron a
+  // otro). `evaluarOtorgItems` escala el nivel por el monto (`conPiso`, INC-05) y este snapshot no lo hacía: las
+  // tarjetas del tab leen `ver.res` y la solicitud, los mensajes y la bandeja leen la evaluación viva. Dos evaluaciones,
+  // dos verdades. Mismo monto, misma función, mismo nivel; el del tramo queda aparte, como allá.
+  const monto = (deal && deal.monto) || 0;
   const res = REGLAS_CLIENTE.filter((r) => !esReglaDeudor(r)).map((r) => {
     const e = evalReglaCli(r, vars, padron);
     // `motivo`/`arregla` viajan en el snapshot: si no, la fila del cliente diría «No ejecutada» sin decir
@@ -24038,7 +24050,8 @@ function snapVersionCli(deal, rev, opts) {
       cond: r.cond,
       hallazgo: r.hallazgo,
       disp: e.disp,
-      nivel: e.nivel,
+      nivel: e.disp === "excepcion" ? nivelExigido(r.area, e.nivel, monto) : e.nivel,
+      nivelTramo: e.nivel,
       tierIdx: e.tierIdx,
       label: e.label,
       reev: reglaReev(r.n),
@@ -24491,7 +24504,7 @@ function visadoDealCalc(deal, visado, estado) {
       nombre: x.regla.nombre,
       hallazgo: x.regla.hallazgo,
       area: x.regla.area,
-      nivel: x.nivel || 4,
+      nivel: nivelDe(x),
       reev: reglaReev(x.regla.n),
     }));
   const rech = res
@@ -26399,7 +26412,7 @@ function codigosAprobadoresDe(excPend, padron) {
   (excPend || []).forEach((x) => {
     const regla = (x && x.regla) || x;
     pad.usuarios.forEach((u) => {
-      if (!u.superAdmin && puedeAprobarExc(u.code, regla, (x && x.nivel) || 4, pad)) codes.add(u.code);
+      if (!u.superAdmin && puedeAprobarExc(u.code, regla, nivelDe(x), pad)) codes.add(u.code);
     });
   });
   return Array.from(codes);
@@ -26413,7 +26426,7 @@ function tramosDeExcepciones(excPend, padron) {
   (excPend || []).forEach((x) => {
     const regla = (x && x.regla) || x;
     const area = (regla && regla.area) || "";
-    const niv = (x && x.nivel) || 4;
+    const niv = nivelDe(x);
     const k = area + "|" + niv;
     const g = porTramo.get(k) || { area, niv, n: 0, quienes: aprobadoresExc(regla, niv, pad) };
     g.n++;
@@ -26619,7 +26632,7 @@ function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinCome
     });
     return { ok: false, motivo: "La solicitud de excepción necesita un comentario, un respaldo o la declaración de que no hay comentarios adicionales." };
   }
-  const nr = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", x.nivel || 1);
+  const nr = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", nivelDe(x));
   // La solicitud anterior marcada «ya no aplica» (regla 70) no se pisa ni se reactiva: la nueva la lleva como historia
   // en `anteriores`, cada una con la versión en la que se pidió. Y guarda de qué regla y deudor es, porque cuando el
   // deudor sale de la operación la clave es lo único que queda para nombrarla.
@@ -26639,7 +26652,7 @@ function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinCome
       por: USERS[execCode] || execCode,
       porCode: execCode,
       fecha: new Date().toLocaleString("es-CL"),
-      nivel: x.nivel || 4,
+      nivel: nivelDe(x),
       rol: nr.rol,
       reglaN: x.regla.n,
       reglaNombre: x.regla.nombre,
@@ -26655,14 +26668,14 @@ function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinCome
     usuario: USERS[execCode] || execCode,
     modulo: "Otorgamiento · Solicitud de excepción",
     accion: "Solicitar aprobación",
-    glosa: `Regla #${x.regla.n} ${x.regla.nombre} · ${AREA_LBL[nr.area]} N${x.nivel || 4} (${nr.rol}) · ${deal.cliente}${dtxt}${comentario ? " · " + comentario : ""}${archivos && archivos.length ? " · " + archivos.length + " adjunto(s)" : ""}`,
+    glosa: `Regla #${x.regla.n} ${x.regla.nombre} · ${AREA_LBL[nr.area]} N${nivelDe(x)} (${nr.rol}) · ${deal.cliente}${dtxt}${comentario ? " · " + comentario : ""}${archivos && archivos.length ? " · " + archivos.length + " adjunto(s)" : ""}`,
     empresaId: deal.id,
     exito: true,
   });
   logOtorgEvento(
     deal.id,
     USERS[execCode] || execCode,
-    `${USERS[execCode] || execCode} solicitó al ${nr.rol} (N${x.nivel || 4}) la aprobación de la excepción #${x.regla.n} ${x.regla.nombre}${dtxt}${archivos && archivos.length ? " · con " + archivos.length + " respaldo(s)" : ""}`,
+    `${USERS[execCode] || execCode} solicitó al ${nr.rol} (N${nivelDe(x)}) la aprobación de la excepción #${x.regla.n} ${x.regla.nombre}${dtxt}${archivos && archivos.length ? " · con " + archivos.length + " respaldo(s)" : ""}`,
     comentario || "",
   );
   // Apoderados hábiles para visar esta excepción → aviso + tarea.
@@ -26683,11 +26696,11 @@ function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinCome
   // La tarea viaja con el PAR (área, nivel), no con la foto de quién podía aprobarla hoy: así el
   // apoderado que llegue después la ve, y el que se fue deja de verla, sin que nadie migre nada.
   addPanelTarea({
-    texto: `Aprobar excepción #${x.regla.n} ${x.regla.nombre}${dtxt} · ${deal.cliente} · ${nr.rol} (N${x.nivel || 4}) · solicitada por ${(USERS[execCode] || execCode).split(" · ")[0]}`,
+    texto: `Aprobar excepción #${x.regla.n} ${x.regla.nombre}${dtxt} · ${deal.cliente} · ${nr.rol} (N${nivelDe(x)}) · solicitada por ${(USERS[execCode] || execCode).split(" · ")[0]}`,
     cat: "cerrar",
     autor: USERS[execCode] || execCode,
     area: (x.regla && x.regla.area) || null,
-    nivel: x.nivel || 4,
+    nivel: nivelDe(x),
     para: dests.map((c) => (USERS[c] || c).split(" · ")[0]),
     ops: [deal.id],
     nodo: "Otorgamiento",
@@ -26892,11 +26905,11 @@ function VisadoClienteView({ deals, usuario, onChange }) {
     const res = evaluarOtorgItems(deal);
     const st = VISADO_STATE[deal.id] || {};
     const excPend = res.filter((x) => x.disp === "excepcion" && excSinVisar(st, x.stKey));
-    const misPend = excPend.filter((x) => puede(x.regla, x.nivel || 4));
+    const misPend = excPend.filter((x) => puede(x.regla, nivelDe(x)));
     if (misPend.length > 0) return; // aún le quedan excepciones a ESTE aprobador → no completó su parte
     const porNivel = {};
     excPend.forEach((x) => {
-      const niv = x.nivel || 1;
+      const niv = nivelDe(x);
       const nr = rolDeAreaNivel((x.regla && x.regla.area) || x.area || "riesgo", niv);
       (porNivel[niv + "|" + nr.area] = porNivel[niv + "|" + nr.area] || { rol: nr.rol, niv, n: 0 }).n++;
     });
@@ -26925,7 +26938,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
   const setExc = async (deal, x, val, msg, arch) => {
     const k = x.stKey,
       area = x.regla.area,
-      nivel = x.nivel || 4;
+      nivel = nivelDe(x);
     const st = { ...(repoVisado.get(deal.id) || {}), [k]: val };
     const det = {
       ...(repoVisadoDetalle.get(deal.id) || {}),
@@ -26942,13 +26955,13 @@ function VisadoClienteView({ deals, usuario, onChange }) {
     // vieja, de un rol que cambió o de una atribución que se revocó, y la decisión de un apoderado es
     // evidencia regulatoria. En producción esto lo rechaza el resolver desde el rol del token —acá se
     // anticipa, que es lo que este cliente puede hacer—.
-    if (!puedeAprobarExc(usuario, x.regla, x.nivel || 4)) {
-      const req = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", x.nivel || 4);
+    if (!puedeAprobarExc(usuario, x.regla, nivelDe(x))) {
+      const req = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", nivelDe(x));
       registrarAuditoria({
         usuario: USERS[usuario] || usuario,
         modulo: "Otorgamiento · Visado",
         accion: "Decisión rechazada por atribución (OTG-01)",
-        glosa: `Intento de resolver la regla ${x.regla.n} de «${deal.cliente}» sin la atribución requerida (${req.rol} · N${x.nivel || 4})`,
+        glosa: `Intento de resolver la regla ${x.regla.n} de «${deal.cliente}» sin la atribución requerida (${req.rol} · N${nivelDe(x)})`,
         empresaId: deal.id,
         severidad: "alta",
         exito: false,
@@ -27003,13 +27016,13 @@ function VisadoClienteView({ deals, usuario, onChange }) {
     // vieja, de un rol que cambió o de una atribución que se revocó, y la decisión de un apoderado es
     // evidencia regulatoria. En producción esto lo rechaza el resolver desde el rol del token —acá se
     // anticipa, que es lo que este cliente puede hacer—.
-    if (!puedeAprobarExc(usuario, x.regla, x.nivel || 4)) {
-      const req = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", x.nivel || 4);
+    if (!puedeAprobarExc(usuario, x.regla, nivelDe(x))) {
+      const req = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", nivelDe(x));
       registrarAuditoria({
         usuario: USERS[usuario] || usuario,
         modulo: "Otorgamiento · Visado",
         accion: "Decisión rechazada por atribución (OTG-01)",
-        glosa: `Intento de resolver la regla ${x.regla.n} de «${deal.cliente}» sin la atribución requerida (${req.rol} · N${x.nivel || 4})`,
+        glosa: `Intento de resolver la regla ${x.regla.n} de «${deal.cliente}» sin la atribución requerida (${req.rol} · N${nivelDe(x)})`,
         empresaId: deal.id,
         severidad: "alta",
         exito: false,
@@ -27068,7 +27081,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
       // Sólo un rechazo FIRME (no excepcionable / no re-evaluable) deja la operación rechazada. Si el criterio
       // rechazado es re-evaluable o hay excepciones por aprobar, la operación queda "sujeta", no rechazada.
       const estado = rechFirme.length || excRech.length ? "rechazada" : excPend.length || rechReev.length ? "sujeta" : "aprobada";
-      const mias = excPend.filter((x) => puede(x.regla, x.nivel || 4));
+      const mias = excPend.filter((x) => puede(x.regla, nivelDe(x)));
       const requiere = exc.length > 0 || rechReev.length > 0 || rechFirme.length > 0;
       const aceptada = ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage);
       const pre = tienePreEval(deal.id);
@@ -27195,8 +27208,8 @@ function VisadoClienteView({ deals, usuario, onChange }) {
         // Con "Sólo mis pendientes": la sección principal muestra sólo las excepciones que ESTE usuario puede
         // accionar; las de otros aprobadores se listan aparte (solo lectura) para ver el panorama completo.
         const stOp = VISADO_STATE[o.deal.id] || {};
-        const excShow = soloMias ? o.exc.filter((x) => puede(x.regla, x.nivel || 4)) : o.exc;
-        const excOtros = soloMias ? o.exc.filter((x) => excSinVisar(stOp, x.stKey) && !puede(x.regla, x.nivel || 4)) : [];
+        const excShow = soloMias ? o.exc.filter((x) => puede(x.regla, nivelDe(x))) : o.exc;
+        const excOtros = soloMias ? o.exc.filter((x) => excSinVisar(stOp, x.stKey) && !puede(x.regla, nivelDe(x))) : [];
         // Agrupación de las excepciones: primero las reglas del CLIENTE, luego una SECCIÓN POR CADA DEUDOR
         // (razón social), cada regla de deudor evaluada con las variables de ESE deudor.
         const grpKey = (x) => (x.deudor ? x.deudor.rut || x.deudor.nombre : "__cli");
@@ -27320,7 +27333,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                         // «Ya no aplica» vuelve a ser pendiente si la regla levantó de nuevo (regla 70).
                         const ee = excSinVisar(VISADO_STATE[o.deal.id], x.stKey) ? "pendiente" : VISADO_STATE[o.deal.id][x.stKey];
                         const det = (VISADO_DETALLE[o.deal.id] || {})[x.stKey];
-                        const niv = x.nivel || 1;
+                        const niv = nivelDe(x);
                         const nr = rolDeAreaNivel(x.regla.area, niv);
                         const otraArea = false;
                         const aps = aprobadoresExc(x.regla, niv);
@@ -27632,7 +27645,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                     </div>
                     <div className="mt-1 space-y-1">
                       {excOtros.map((x) => {
-                        const niv = x.nivel || 1;
+                        const niv = nivelDe(x);
                         const nr = rolDeAreaNivel((x.regla && x.regla.area) || x.area || "riesgo", niv);
                         return (
                           <div
@@ -47971,7 +47984,7 @@ export default function PipelineComercial() {
       const res = evaluarOtorgItems(d);
       const st = VISADO_STATE[d.id] || {};
       const excPend = res.filter((x) => x.disp === "excepcion" && excSinVisar(st, x.stKey));
-      const mias = excPend.filter((x) => puedeU(x.regla, x.nivel || 4));
+      const mias = excPend.filter((x) => puedeU(x.regla, nivelDe(x)));
       if (mias.length) n++;
     });
     return n;

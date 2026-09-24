@@ -12,9 +12,9 @@ timestamp: 2026-09-24T01:30:00Z
 
 ## Fase del proyecto
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **178/178 PASA**, **71 archivos de gate de contrato**,
+(`pipeline_comercial.jsx`), build standalone, **179/179 PASA**, **72 archivos de gate de contrato**,
 **40 casos e2e** (40/40), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
-(111 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
+(112 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
 gate. La crónica del 17 al 23-09 vive en sus logs: el backlog decidido del curse (reglas 64–75, ADR-0013 a 0021), la
 plata (60–62), el orden de la carpeta, los entregables versionados y `Casos_de_Prueba/`.
 
@@ -38,21 +38,21 @@ del pipeline (rol `inbound`) y el desglose de `capacidadDeudores` **siempre cuad
 mismo en todos los tabs (alto mínimo fijo + `scrollbar-gutter: stable`), más cuatro de UI en Verificación —chip de
 cabecera sólo si el deudor está partido, sin columna Tasa, el panel de la API en una fila, y la tabla ordenada por
 tipo · folio · emisión · vencimiento · monto con estado en tres valores— ([log](./2026-09-24_el_encabezado_no_salta.md)).
+Y **regla 83 · ADR-0025 · caso 179**: el nivel de una excepción se calcula UNA vez —la versión guardaba el del tramo y la
+solicitud, el hilo y la bandeja el escalado por monto: por eso el Jefe de Operaciones veía «(N1)» en la tarjeta, nada en
+la bandeja y ningún mensaje— ([log](./2026-09-24_un_nivel_por_excepcion.md)).
 
 > ## 🎯 Siguiente paso
 >
-> 1. **INCONSISTENCIA DE CONTROL, 24-09, sin diagnosticar.** Con la sesión en **Jefe de Operaciones (Operaciones N3)**
->    la bandeja dice «48 excepciones pendientes, **ninguna requiere tu atribución**» y desglosa «3 en Operaciones N4»,
->    mientras el detalle de esa operación muestra «En espera del visto bueno de **Jefe de Operaciones (N1)**» y **(N3)**:
->    tarjeta y bandeja calculan área/nivel distinto (la familia del `|| 4` contra `|| 1` de `:10820`). **Y los mensajes
->    tampoco llegaron.** Mirar `rolDeAreaNivel`, `puedeAprobarExc` y «Sólo mis pendientes» de `OtorgamientosView`.
+> 1. **Pregunta abierta al usuario (24-09):** ¿un aviso a los aprobadores **al publicar** la oferta, además de la
+>    solicitud (regla 66) y la firma (regla 50)? Hoy no existe por diseño; sería un T2 en `cerrarOferta`. Y si el Jefe
+>    de Operaciones (N3) debe aprobar operaciones críticas, se baja el piso en `PISO_ATRIB_MONTO` (Mantenedores), no en código.
 > 2. **Cinco gaps del curse decididos el 23-09 y sin implementar** (matriz §2.2, con el texto verbatim del usuario):
 >    **G-23** · **G-18** · **G-27** · **G-28** · **G-05**; **G-29** queda como T2.
 > 3. **Lo demás**: selector de sesión angosto con elipsis · chip «Negociación» tras enviar a comité · `.bat` · O01 · 28 · 13-quater · `pipeline.zip`.
 
-## En vuelo · nada: la revisión de Reportes (reglas 76–79) entró a `main` el 24-09
-**Antes de modificar se integra `main`**: skill `sincronizar-main` + `node sincronizar_main.mjs` (paso 0 del ciclo), y se
-verifica el árbol MEZCLADO, no la rama ([`flujo_git.md`](../conocimiento/flujo_git.md)).
+## En vuelo · nada: todo lo del 24-09 entró a `main` (`b4a5b17` y siguientes)
+**Antes de modificar se integra `main`** (`node sincronizar_main.mjs`, paso 0) y se verifica el árbol MEZCLADO, no la rama.
 
 ## Bloqueos · del usuario, desde Windows
 El relay git bloquea el BORRADO y `refs/tags/*` con **HTTP 403** (los pushes normales funcionan; el MCP tampoco expone

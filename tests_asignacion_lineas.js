@@ -8938,6 +8938,43 @@
        `una fila por RUT ${unaFila} (${dosFormas.length}) · identidad ${identidadOk} (id «${fila.id}» · rut «${fila.rutEmisor}») · deudores con RUT ${deudoresOk} · un deudor por RUT ${unDeudorOk} · dos RUT = dos filas ${dosFilasOk} (${dosRuts.length}) · respaldo por nombre ${respaldoOk} · capacidad clasifica ${capOk} (${cap ? cap.primeConLinea.n + "/" + cap.otrosConLinea.n + "/" + cap.sinLinea.n : "—"}) · sin RUT los N van a sin línea ${sinRutOk} · cero deudores = vacío ${ceroOk}`);
   }
 
+  // 179 · EL NIVEL DE UNA EXCEPCIÓN ES UNO SOLO (regla 83, ADR-0025; reportado por el usuario el 24-09-2026 con la
+  // sesión en Jefe de Operaciones: la tarjeta decía «Jefe de Operaciones (N1)», la bandeja «ninguna requiere tu
+  // atribución · 3 en Operaciones N4» y los mensajes le llegaron a otro). `snapVersionCli` guardaba el nivel del TRAMO
+  // y `evaluarOtorgItems` el escalado por monto; las tarjetas leen la versión y la solicitud, los mensajes y la bandeja
+  // leen la evaluación viva. Mismo monto → mismo nivel en las dos, regla por regla, en los dos tramos.
+  {
+    const dA = LB[0], dB = LB[1];
+    const base = { id: "T-179", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", stage: "oferta", exec: "CR",
+                   facturasOp: [fac("a1", dA, 30), fac("b1", dB, 20)] };
+    const nivelesDe = (deal) => ({
+      vivo: evaluarOtorgItems(deal).filter((i) => !i.deudor && i.disp === "excepcion"),
+      snap: (snapVersionCli(deal, 0).res || []).filter((x) => x.disp === "excepcion"),
+    });
+    const critico = nivelesDe({ ...base, monto: 200e6 });
+    const leve = nivelesDe({ ...base, monto: 10e6 });
+    const hayExc = critico.vivo.length > 0 && critico.snap.length > 0;
+    const mismasReglas = critico.vivo.map((i) => i.regla.n).sort().join() === critico.snap.map((x) => x.n).sort().join();
+    // (a) MISMO NIVEL en la versión y en la evaluación viva, regla por regla, con el monto crítico y con el leve.
+    const igual = (r) => r.vivo.every((i) => (r.snap.find((x) => x.n === i.regla.n) || {}).nivel === i.nivel);
+    const igualCritico = igual(critico), igualLeve = igual(leve);
+    // (b) El crítico ESCALA: ninguna excepción queda bajo el piso de su área ni bajo su tramo, y al menos una sube.
+    const escala = critico.snap.every((x) => x.nivel >= pisoPorMonto(x.area, 200e6) && x.nivel >= x.nivelTramo) && critico.snap.some((x) => x.nivel > x.nivelTramo);
+    // (c) El leve NO escala: el nivel es el del tramo, y el tramo viaja en la versión.
+    const noEscala = leve.snap.every((x) => x.nivel === x.nivelTramo && Number.isInteger(x.nivelTramo) && x.nivelTramo >= 1);
+    // (d) Un solo respaldo para el nivel ausente.
+    const respaldoOk = nivelDe({ nivel: 2 }) === 2 && nivelDe({}) === 4 && nivelDe(null) === 4;
+    // (e) Y LO QUE ESO DECIDE: los destinatarios de la solicitud, calculados con el nivel de la TARJETA (la versión),
+    //     son los mismos que con el nivel de la evaluación viva — antes eran dos listas distintas.
+    const x0 = critico.vivo[0] || null;
+    const s0 = x0 && critico.snap.find((x) => x.n === x0.regla.n);
+    const dests = !!x0 && !!s0 && codigosAprobadoresDe([{ regla: x0.regla, nivel: s0.nivel }]).sort().join() === codigosAprobadoresDe([x0]).sort().join();
+    const muestra = (r) => r.snap.slice(0, 3).map((x) => `#${x.n} ${x.area} N${x.nivel}${x.nivelTramo !== x.nivel ? " (tramo " + x.nivelTramo + ")" : ""}`).join(", ");
+    ok("179 el nivel de una excepción es uno solo: la versión guarda el nivel EXIGIDO —el del tramo escalado por el monto, con la misma función y el mismo monto que la evaluación viva— y conserva el del tramo aparte, el respaldo del nivel ausente es único, y los destinatarios de la solicitud salen del mismo nivel que muestra la tarjeta",
+       hayExc && mismasReglas && igualCritico && igualLeve && escala && noEscala && respaldoOk && dests,
+       `excepciones ${critico.vivo.length} vivas / ${critico.snap.length} en versión · mismas reglas ${mismasReglas} · igual crítico ${igualCritico} · igual leve ${igualLeve} · crítico escala ${escala} (${muestra(critico)}) · leve no escala ${noEscala} (${muestra(leve)}) · respaldo único ${respaldoOk} · destinatarios coinciden ${dests}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
