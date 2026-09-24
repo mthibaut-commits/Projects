@@ -5039,8 +5039,19 @@ function relojSimulado(corridas, cfg) {
 }
 // ¿La oportunidad tiene oferta? El ejecutivo la simuló —etapa Oferta o posterior— o la oferta ya avanzó. Un paquete
 // elegido sin simular sigue en Prospección: no es oferta todavía (regla 12-bis).
-const tieneOferta = (d) => !!d && (!!d.simulado || (d.stage != null && d.stage !== "prospeccion"));
-// EL CORTE, puro: separa lo que se elimina —del inbound y sin oferta— de lo que queda. Conserva el orden y NO muta la
+// Y LA VERSIÓN EMITIDA ES LA OFERTA, ESTÉ O NO EN ESTA COPIA (regla 85, ADR-0026; 24-09-2026, reportado por el usuario:
+// Paula Reyes N5 podía visar en el detalle y la mesa de Otorgamientos le decía 0). La simulación se hace en la pestaña
+// del detalle y llega al tubo por `nex-simulado`; si el corte del día pasa antes —cada ~60 s reales en la demo— la copia
+// del tubo sigue en Prospección sin `simulado`, se elimina, el aviso llega a nadie y al reinicio la operación renace con
+// otro id: el detalle, la solicitud y el hilo hablan de una operación que el tubo ya no tiene. La versión (regla 72) es
+// el hecho del proceso y vive en el repositorio que el tubo relee con el evento `storage`: se lee de ahí.
+const tieneVersion = (id) => !!id && (((typeof SIM_VERSIONS !== "undefined" && SIM_VERSIONS) || {})[id] || []).length > 0;
+const tieneOferta = (d) => !!d && (!!d.simulado || (d.stage != null && d.stage !== "prospeccion") || tieneVersion(d.id));
+// GESTIONADA = con oferta o con la pre-evaluación pedida (regla 85): la solicitud de una excepción pone la operación en
+// la bandeja de otorgamiento (`setPreEval`) aunque el ejecutivo no haya simulado todavía, y eliminarla dejaría a los
+// apoderados visando una operación que el tubo ya no lista.
+const tieneGestion = (d) => tieneOferta(d) || (!!d && typeof tienePreEval === "function" && tienePreEval(d.id));
+// EL CORTE, puro: separa lo que se elimina —del inbound y sin gestión— de lo que queda. Conserva el orden y NO muta la
 // entrada; `gestionadas` cuenta las del inbound que sobreviven, que es la cifra que la bitácora dice.
 function corteDelDia(deals) {
   const eliminadas = [],
@@ -5048,7 +5059,7 @@ function corteDelDia(deals) {
   let gestionadas = 0;
   for (const d of deals || []) {
     if (!d) continue;
-    if (d._inbound && !tieneOferta(d)) eliminadas.push(d);
+    if (d._inbound && !tieneGestion(d)) eliminadas.push(d);
     else {
       quedan.push(d);
       if (d._inbound) gestionadas++;
@@ -51216,7 +51227,7 @@ export default function PipelineComercial() {
       logSys(
         "info",
         "cierre-dia",
-        `Corte del día ${nDia} (${cfgT.horaFin}): se elimina ${d.id} · ${d.cliente} · ${d.facturas || 0} doc. · ${fmtMM(d.monto || 0)} · sin oferta`,
+        `Corte del día ${nDia} (${cfgT.horaFin}): se elimina ${d.id} · ${d.cliente} · ${d.facturas || 0} doc. · ${fmtMM(d.monto || 0)} · sin oferta ni pre-evaluación`,
         {
           operacion: d.id,
           cedente: d.cliente,

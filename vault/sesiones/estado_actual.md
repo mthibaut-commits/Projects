@@ -12,9 +12,9 @@ timestamp: 2026-09-24T01:30:00Z
 
 ## Fase del proyecto
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **180/180 PASA**, **72 archivos de gate de contrato**,
+(`pipeline_comercial.jsx`), build standalone, **181/181 PASA**, **73 archivos de gate de contrato**,
 **41 casos e2e** (41/41), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
-(113 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
+(114 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
 gate. La crónica del 17 al 23-09 vive en sus logs: el backlog decidido del curse (reglas 64–75, ADR-0013 a 0021), la
 plata (60–62), el orden de la carpeta, los entregables versionados y `Casos_de_Prueba/`.
 
@@ -42,15 +42,16 @@ Y **regla 83 · ADR-0025 · caso 179**: el nivel de una excepción se calcula UN
 solicitud, el hilo y la bandeja el escalado por monto: por eso el Jefe de Operaciones veía «(N1)» en la tarjeta, nada en
 la bandeja y ningún mensaje— ([log](./2026-09-24_un_nivel_por_excepcion.md)). Y **regla 84 · caso 180 · `e2e-84-a`**: la
 oportunidad es UNA lista (`poolOportunidad`) y la fila del tubo cuenta lo mismo que «Todo lo disponible» del detalle
-([log](./2026-09-24_la_oportunidad_es_una_sola_lista.md)).
+([log](./2026-09-24_la_oportunidad_es_una_sola_lista.md)). Y **regla 85 · ADR-0026 · caso 181**: el corte del día lee el
+estado del proceso —versión emitida o pre-evaluación— y ya no elimina la operación que el ejecutivo trabaja en el detalle
+([log](./2026-09-24_el_corte_lee_el_proceso.md)).
 
 > ## 🎯 Siguiente paso
 >
 > 1. **Pregunta abierta al usuario (24-09):** ¿un aviso a los aprobadores **al publicar** la oferta, además de la
 >    solicitud (regla 66) y la firma (regla 50)? Hoy no existe por diseño; sería un T2 en `cerrarOferta`. Y si el Jefe
 >    de Operaciones (N3) debe aprobar operaciones críticas, se baja el piso en `PISO_ATRIB_MONTO` (Mantenedores), no en código.
-> 2. **Cinco gaps del curse decididos el 23-09 y sin implementar** (matriz §2.2, con el texto verbatim del usuario):
->    **G-23** · **G-18** · **G-27** · **G-28** · **G-05**; **G-29** queda como T2.
+> 2. **Cinco gaps del curse decididos el 23-09 y sin implementar** (matriz §2.2, verbatim del usuario): G-23 · G-18 · G-27 · G-28 · G-05; G-29 como T2.
 > 3. **Lo demás**: selector de sesión angosto · chip «Negociación» tras comité · `.bat` · O01 · 28 · 13-quater · `pipeline.zip` · ¿el KPI del tubo suma la oportunidad completa (regla 84)?
 
 ## En vuelo · nada: todo lo del 24-09 entró a `main` (`b4a5b17` y siguientes)
@@ -68,8 +69,7 @@ sobre `bd14091` y borrar las ramas ya integradas; se quedan `main`, `respaldo/ma
 3. `BASE_MUERTOS` en **1** (`giroDeal`) · **GN como disyunción** (22) · sin gate, la concentración del Directorio (31) · dos sitios arman un RUT de CLIENTE (`rutDe`), regla 46.
 4. **Dos sesiones paralelas toman el mismo «siguiente entero libre»**, y el turno se pierde MIENTRAS UNO
    VERIFICA ([log](./2026-09-23_mezclar_todo_lo_pendiente.md)). Al mezclar, `git cherry` y no `--merged`.
-5. **Hooks en Windows**: `node verificar_hooks.mjs` una vez · `gitflow_guard.mjs` cree que `git merge-base` integra a
-   `main` (usar `git branch -r --merged`) · `invariantes.test.mjs` sólo comprueba que el caso citado EXISTA.
+5. **Hooks en Windows**: `node verificar_hooks.mjs` una vez · `gitflow_guard.mjs` cree que `git merge-base` integra a `main` · `invariantes.test.mjs` sólo comprueba que el caso citado EXISTA.
 6. **Reportes, lo que la revisión no arregló** (medido, [log](./2026-09-23_reportes_leen_la_cartera.md)): los **25
    cedentes sin ficha en el A5** que sí ceden a Security figuran «Inactivos»; «Brecha de wallet» multiplica por
    `COLOC_PROM_12M` (lo nuestro) y no por lo que el cliente cede; «SOW promedio» (30 %) promedia prospectos en 0 al lado

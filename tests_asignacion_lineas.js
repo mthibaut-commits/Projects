@@ -9011,6 +9011,40 @@
        `emisor ${rut180 || "—"} · pool ${pool0.length} · sin duplicados ${sinDup} · sólo agregables ${soloBuenas} · la fila cuenta lo mismo ${filaOk} (${an0 ? an0.nFacturas + " fact. · M$" + an0.monto : "—"} vs ${pool0.length} · M$${montoPool}) · la bloqueada no cuenta ${bloqOk} · en la oferta no se duplica ${dedupOk} · la nueva suma ${sumaOk}`);
   }
 
+  // 181 · EL CORTE LEE EL ESTADO DEL PROCESO, NO SÓLO LA COPIA DE LA PESTAÑA (regla 85, ADR-0026; reportado por el usuario
+  // el 24-09-2026: Paula Reyes N5 podía visar en el detalle y la mesa le decía 0). La simulación ocurre en la pestaña del
+  // detalle; si el corte pasa antes de que el aviso llegue, la copia del tubo no tiene `simulado` ni etapa Oferta. La
+  // versión emitida (repositorio, regla 72) y la pre-evaluación pedida (repositorio) son hechos del proceso: con
+  // cualquiera de los dos la operación NO se elimina.
+  {
+    const mk = (id, extra) => ({ id, _inbound: true, stage: "prospeccion", cliente: "Cliente 181", rutEmisor: "76.181.181-1", facturasOp: [],
+      facturasDisponibles: [{ id: id + "-f1", folio: 1811, monto: 1e6, deudor: "Deudor 181" }], ...extra });
+    const V = mk("OP-V181"), P = mk("OP-P181"), N = mk("OP-N181");
+    const guardV = SIM_VERSIONS["OP-V181"], guardP = PRE_EVAL["OP-P181"];
+    let r, sinOfertaV, conVersionV, conPreP, sinNadaN;
+    try {
+      // (a) ANTES: sin versión ni pre-evaluación, las tres son «sin oferta».
+      sinOfertaV = tieneOferta(V) === false && tieneGestion(V) === false;
+      // (b) La VERSIÓN emitida en el repositorio hace que la copia sin `simulado` tenga oferta, y el corte no la toca.
+      SIM_VERSIONS["OP-V181"] = [{ v: 1, rev: 0, res: [], ts: Date.now() }];
+      conVersionV = tieneOferta(V) === true && tieneGestion(V) === true;
+      // (c) La PRE-EVALUACIÓN pedida no es oferta, pero es gestión: tampoco se elimina.
+      PRE_EVAL["OP-P181"] = { por: "CR", porNombre: "Carla Rivas", ts: "x" };
+      conPreP = tieneOferta(P) === false && tieneGestion(P) === true;
+      r = corteDelDia([V, P, N]);
+      sinNadaN = r.eliminadas.map((d) => d.id).join(",") === "OP-N181" && r.quedan.map((d) => d.id).join(",") === "OP-V181,OP-P181" && r.gestionadas === 2;
+    } finally {
+      if (guardV === undefined) delete SIM_VERSIONS["OP-V181"]; else SIM_VERSIONS["OP-V181"] = guardV;
+      if (guardP === undefined) delete PRE_EVAL["OP-P181"]; else PRE_EVAL["OP-P181"] = guardP;
+    }
+    // (d) Y DESPUÉS de limpiar, el corte vuelve a eliminarlas: la decisión sale del repositorio, no de la copia.
+    const r2 = corteDelDia([V, P, N]);
+    const limpioOk = r2.eliminadas.length === 3 && r2.quedan.length === 0;
+    ok("181 al corte del día la oportunidad con VERSIÓN emitida en el repositorio (la oferta simulada en la pestaña del detalle) o con PRE-EVALUACIÓN pedida no se elimina aunque la copia del tubo siga en Prospección sin simulado; sin ninguna de las dos, sí",
+       sinOfertaV && conVersionV && conPreP && sinNadaN && limpioOk,
+       `sin nada: sin oferta ${sinOfertaV} · con versión: tiene oferta y no se corta ${conVersionV} · con pre-evaluación: gestionada ${conPreP} · corte ${sinNadaN} (elimina ${r ? r.eliminadas.map((d) => d.id).join(",") : "—"} · quedan ${r ? r.quedan.map((d) => d.id).join(",") : "—"}) · limpio vuelve a cortar ${limpioOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
