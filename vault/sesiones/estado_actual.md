@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-24T07:30:00Z
+timestamp: 2026-09-24T08:00:00Z
 ---
 
 # Estado actual
@@ -11,12 +11,11 @@ timestamp: 2026-09-24T07:30:00Z
 > **Primer archivo que lee toda sesión, último que actualiza.** ≤80 líneas; se sobrescribe, no crece.
 
 ## Fase del proyecto
-Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **181/181 PASA**, **73 archivos de gate de contrato**,
-**41 casos e2e** (41/41), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
-(114 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
-gate. La crónica del 17 al 23-09 vive en sus logs: el backlog decidido del curse (reglas 64–75, ADR-0013 a 0021), la
-plata (60–62), el orden de la carpeta, los entregables versionados y `Casos_de_Prueba/`.
+Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente (`pipeline_comercial.jsx`),
+build standalone, **181/181 PASA**, **74 archivos de gate de contrato**, **41 casos e2e** (41/41), `tsc` limpio, 0 duplicados.
+El 17-09-2026 el repo abrió su vault (114 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del
+contrato tienen gate. La crónica del 17 al 23-09 vive en sus logs: el curse decidido (64–75, ADR-0013 a 0021), la plata (60–62),
+el orden de la carpeta, los entregables versionados y `Casos_de_Prueba/`.
 
 La **noche del 23-09**, en dos ramas paralelas. La **revisión de Reportes**: la cartera de Cliente y SOW se MIDE (76), las
 cifras de operación se suman del A1 y el A2 con una sola función (77), la pérdida por cesión es un hecho del A2 (78,
@@ -38,23 +37,24 @@ del pipeline (rol `inbound`) y el desglose de `capacidadDeudores` **siempre cuad
 mismo en todos los tabs (alto mínimo fijo + `scrollbar-gutter: stable`), más cuatro de UI en Verificación —chip de
 cabecera sólo si el deudor está partido, sin columna Tasa, el panel de la API en una fila, y la tabla ordenada por
 tipo · folio · emisión · vencimiento · monto con estado en tres valores— ([log](./2026-09-24_el_encabezado_no_salta.md)).
-Y **regla 83 · ADR-0025 · caso 179**: el nivel de una excepción se calcula UNA vez —la versión guardaba el del tramo y la
-solicitud, el hilo y la bandeja el escalado por monto: por eso el Jefe de Operaciones veía «(N1)» en la tarjeta, nada en
-la bandeja y ningún mensaje— ([log](./2026-09-24_un_nivel_por_excepcion.md)). Y **regla 84 · caso 180 · `e2e-84-a`**: la
+Y **regla 83 · ADR-0025 · caso 179**: el nivel de una excepción se calcula UNA vez —la versión guardaba el del tramo y la solicitud,
+el hilo y la bandeja el escalado por monto: el Jefe de Operaciones veía «(N1)» en la tarjeta y nada en la bandeja— ([log](./2026-09-24_un_nivel_por_excepcion.md)). Y **regla 84 · caso 180 · `e2e-84-a`**: la
 oportunidad es UNA lista (`poolOportunidad`) y la fila del tubo cuenta lo mismo que «Todo lo disponible» del detalle
 ([log](./2026-09-24_la_oportunidad_es_una_sola_lista.md)). Y **regla 85 · ADR-0026 · caso 181**: el corte del día lee el
 estado del proceso —versión emitida o pre-evaluación— y ya no elimina la operación que el ejecutivo trabaja en el detalle
 ([log](./2026-09-24_el_corte_lee_el_proceso.md)). Y la **tarjeta de otorgamiento termina en la banda** («Modificar solicitud» abre un panel lateral; [log](./2026-09-24_la_tarjeta_termina_en_la_banda.md)).
+Y **la v2 de `datamart-ui` queda instalada** («usa la V2»), con `references/components-extended.md`, la consigna en `CLAUDE.md` (diseño en línea
+con `datamart-ui` v2, pulido con `emil-design-eng`, manda la regla 63) y el gate `skills_propias.test.mjs` ([log](./2026-09-24_la_v2_de_datamart_ui_se_instala.md)).
 Y el **caso 138 (CRY-01) cazó un flaky del FUENTE** (177/178 sobre `b4a5b17`): `emitirOtp` leía `Date.now()` dos veces por registro y `exp − emitido` dejaba de ser el TTL al cambiar el milisegundo; hoy lee el reloj UNA vez, y `addPanelTarea` (`ts`/`venceTs`) igual, por pedido del usuario ([log](./2026-09-24_una_lectura_del_reloj.md)).
 
 > ## 🎯 Siguiente paso
-> 1. **Pregunta abierta al usuario (24-09):** ¿un aviso a los aprobadores **al publicar** la oferta, además de la
->    solicitud (regla 66) y la firma (regla 50)? Hoy no existe por diseño; sería un T2 en `cerrarOferta`. Y si el Jefe
->    de Operaciones (N3) debe aprobar operaciones críticas, se baja el piso en `PISO_ATRIB_MONTO` (Mantenedores), no en código.
+> 1. **Pregunta abierta al usuario (24-09):** ¿un aviso a los aprobadores **al publicar** la oferta, además de la solicitud (regla 66)
+>    y la firma (regla 50)? Hoy no existe por diseño; sería un T2 en `cerrarOferta`. Y si el Jefe de Operaciones (N3) debe aprobar
+>    operaciones críticas, se baja el piso en `PISO_ATRIB_MONTO` (Mantenedores), no en código.
 > 2. **Cinco gaps del curse decididos el 23-09 y sin implementar** (matriz §2.2, verbatim del usuario): G-23 · G-18 · G-27 · G-28 · G-05; G-29 como T2.
 > 3. **Lo demás**: selector de sesión angosto · chip «Negociación» tras comité · `.bat` · O01 · 28 · 13-quater · `pipeline.zip` · ¿el KPI del tubo suma la oportunidad completa (regla 84)?
 
-## En vuelo · `claude/sharp-hypatia-7wru5g`: una lectura del reloj en `emitirOtp` y `addPanelTarea` (caso 138, T2), verificado, por mezclar a `main`
+## En vuelo · nada: todo lo del 24-09 entró a `main`, la v2 de `datamart-ui` y la lectura única del reloj incluidas
 **Antes de modificar se integra `main`** (`node sincronizar_main.mjs`, paso 0) y se verifica el árbol MEZCLADO, no la rama.
 
 ## Bloqueos · del usuario, desde Windows

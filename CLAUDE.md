@@ -104,6 +104,11 @@ contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ni
 - Ediciones quirúrgicas con anclas únicas; verificar tras cada cambio (ver «Verificación» arriba). El archivo es grande: leer solo las secciones necesarias.
 - **Su carpeta local es Windows (CRLF) y el repo es LF.** Al traer archivos suyos hay que normalizar, salvo `vendor/` (bytes fijados por el SBOM). Al comparar, normalizar antes de diferenciar o el diff sale entero.
 - Historial: este proyecto se migró desde Cowork; ya no existe la copia espejo en `outputs` — hay UN solo `pipeline_comercial.jsx`.
+- **Diseño (consigna del 24-09-2026, «usa la V2»)**: todo diseño va en línea con la skill `datamart-ui` **v2**, la instalada en
+  `.claude/skills/datamart-ui/` (la copia que sincroniza la organización cita referencias que su paquete no trae; `Skills/` es el
+  paquete del usuario, ADR-0022), y se pule con `emil-design-eng` (skill de la organización, fuera del repo por ADR-0022).
+  Prevalece la **regla 63**: los tokens son de Datamart —el objeto `C`, `t7`–`t15`, Geist, los radios—; lo externo aporta
+  composición, nunca tokens. El gate `skills_propias.test.mjs` exige que cada skill del repo cite sólo referencias que existen.
 
 ## Mapa
 
