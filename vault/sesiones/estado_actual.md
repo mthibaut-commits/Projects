@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-24T07:30:00Z
+timestamp: 2026-09-24T07:45:00Z
 ---
 
 # Estado actual
@@ -54,7 +54,7 @@ con `datamart-ui` v2, pulido con `emil-design-eng`, manda la regla 63) y el gate
 > 2. **Cinco gaps del curse decididos el 23-09 y sin implementar** (matriz §2.2, verbatim del usuario): G-23 · G-18 · G-27 · G-28 · G-05; G-29 como T2.
 > 3. **Lo demás**: selector de sesión angosto · chip «Negociación» tras comité · `.bat` · O01 · 28 · 13-quater · `pipeline.zip` · ¿el KPI del tubo suma la oportunidad completa (regla 84)?
 
-## En vuelo · `claude/confident-einstein-an5oc8`: la v2 de `datamart-ui` y su gate, con `main` integrado, por mezclar (T2)
+## En vuelo · nada: todo lo del 24-09 entró a `main`, la v2 de `datamart-ui` incluida (`a005e8f` y su mezcla)
 **Antes de modificar se integra `main`** (`node sincronizar_main.mjs`, paso 0) y se verifica el árbol MEZCLADO, no la rama.
 
 ## Bloqueos · del usuario, desde Windows
