@@ -27,7 +27,11 @@ se escribían por fuera (G-24, G-25, G-26) — tras el otorgamiento la operació
 puro `transicionManual`, la pérdida **exige causa** y el intent `cursar` de WhatsApp manda el **enlace**, no la firma; la
 máquina de estados son **DOS TRAMOS**, porque cesión y otorgamiento son *atributos desacoplados*, con lo que **G-30 queda
 cerrado de hecho**
-([log](./2026-09-23_nadie_escribe_una_transicion_ajena.md)).
+([log](./2026-09-23_nadie_escribe_una_transicion_ajena.md)). Y el **24-09, cinco de UI** en el detalle: la píldora
+redundante fuera, las tarjetas de otorgamiento por área, la evaluación colapsada con su icono de re-evaluar, el
+encabezado de Verificación reordenado y los V00–V10 en una columna con el veredicto dentro de V01 — con un hallazgo de
+método: colapsar sacó un botón del DOM y un e2e pasó por su rama de respaldo
+([log](./2026-09-24_cinco_de_ui_y_un_colapsable_que_se_llevo_el_boton.md)).
 
 > ## 🎯 Siguiente paso
 >
@@ -42,12 +46,7 @@ cerrado de hecho**
 >    4 deudores, y todas «Sin línea». Falta `rutRecep` en el evento. **Y sólo debe verlas el gestor del pipeline.**
 > 3. **Cinco gaps del curse decididos el 23-09 y sin implementar** (matriz §2.2, con el texto verbatim del usuario):
 >    **G-23** · **G-18** · **G-27** · **G-28** · **G-05**; **G-29** queda como T2.
-> 4. **UI pedida el 24-09**: quitar la píldora «Sujeto a excepción · N1 · Jefe de Operaciones (Operaciones)» (redundante)
->    y **agrupar por área** las tarjetas de otorgamiento · «Re-evaluación de la simulación» **colapsada**, con header
->    «Evaluación de la simulación · V1 · 5 motores» y un **icono de actualizar** que la gatille · en Verificación el
->    header va **razón social + chip Nota Deudor + chip Prime**, y los V00–V10 **en una columna** con el protocolo
->    telefónico **dentro de «V01»**.
-> 5. **Lo demás**: selector de sesión 1/3 más angosto con elipsis · chip «Negociación» en una operación ya enviada a
+> 4. **Lo demás**: selector de sesión 1/3 más angosto con elipsis · chip «Negociación» en una operación ya enviada a
 >    comité · `.bat` una vez · regenerar `Capturas_UI/` (deuda 2) · O01 · 28 · 13-quater · `pipeline.zip`.
 
 ## En vuelo · nada: la revisión de Reportes (reglas 76–79) entró a `main` el 24-09

@@ -74,7 +74,9 @@ export function auditarRegla72(src) {
   if (!can.includes("const val = giroDeVersion(deal, fs, estado);")) fallos.push("el giro del tubo ya no sale del mismo cálculo que la versión");
   if (!can.includes("const tn = tasaDelNegocio(deal, tasaPondRiesgo, CFG_ACTIVA);")) fallos.push("la pantalla elige la tasa del negocio por su cuenta: lo que se muestra y lo que se versiona se separan");
   if (!can.includes("const nMot = contarVersiones(shown);")) fallos.push("el tab Otorgamiento no cuenta las versiones por motor");
-  if (!can.includes('{shown.length} {shown.length === 1 ? "versión" : "versiones"} · {MOTORES_VERSION.length} motores')) fallos.push("el pill de versiones no dice cuántos motores (o vuelve a decir «versiónes»)");
+  if (!can.includes("V{shown.length} · {MOTORES_VERSION.length} motores"))
+    fallos.push("el pill de versiones no dice la versión y cuántos motores, leídos de `MOTORES_VERSION`");
+  if (/versiónes/.test(can)) fallos.push("vuelve el «versiónes»: el plural de versión no lleva tilde");
   // 7 · El tubo relee las versiones por el evento `storage` (la carrera con el postMessage está medida).
   const st = tramo(can, "const onStorage = (e) => {", "window.addEventListener(\"storage\", onStorage);");
   if (!st.includes('if (!e || e.key !== "pc_repo_" + repoSimVersions.nombre) return;') || !st.includes("repoSimVersions.recargar(); SIM_VERSIONS = repoSimVersions.all();")) fallos.push("el tubo no relee las versiones cuando otra pestaña las escribe: la fila leería una asignación anterior");

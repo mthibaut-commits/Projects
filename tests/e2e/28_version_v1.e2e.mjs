@@ -199,9 +199,12 @@ export const casos = [
         if (enDetalle !== nuevo) throw new Error(`el detalle nuevo no lee el modo cambiado: ${enDetalle}`);
         await det.locator("button").filter({ hasText: /^\s*Otorgamiento\s*\d*\s*$/ }).first().click();
         await det.waitForTimeout(700);
+        const icono = det.locator('button[title^="Re-evaluar la simulación"]').first();
+        if ((await icono.count()) && !(await icono.isDisabled())) await icono.click();
         const btn = det.locator("button").filter({ hasText: /^\s*Re-evaluar simulación\s*$/ }).first();
         let gesto;
-        if (await btn.count() && !(await btn.isDisabled())) { await btn.click(); gesto = "«Re-evaluar simulación»"; }
+        if ((await icono.count()) && !(await icono.isDisabled())) gesto = "el icono de «Re-evaluar la simulación» del encabezado";
+        else if ((await btn.count()) && !(await btn.isDisabled())) { await btn.click(); gesto = "«Re-evaluar simulación»"; }
         else {
           await det.locator("button").filter({ hasText: /^\s*Negocio\s*\d*\s*$/ }).first().click();
           await det.waitForTimeout(500);
