@@ -6696,6 +6696,43 @@ function candidatasLibro(deal, enOferta) {
   for (const f of reales) out.push({ ...f, diasEmision: f.diasEmision != null ? f.diasEmision : diasDesdeEmision(f) });
   return out.sort((a, b) => (b.folio || 0) - (a.folio || 0));
 }
+// LA OPORTUNIDAD DE UN CLIENTE ES TODO LO QUE SE LE PUEDE OFRECER HOY, Y ES UNA SOLA LISTA (regla 84, 24-09-2026,
+// reportado por el usuario: «en la lista de oportunidades aparecen 3 deudores · 3 facturas, pero al entrar al detalle
+// aparecen muchas más; ¿no deberían coincidir si sumo todos los ítems de la tabla?» — «no puede ser otra fuente si la
+// pantalla de detalle es el detalle de la línea de la tabla»). La fila del tubo dimensionaba la oportunidad con el pool
+// de la operación —lo que el inbound trajo y lo que no cupo— y el arranque del detalle le sumaba el LIBRO del cliente en
+// la ventana del tenant (`candidatasLibro`): 3 contra 23. Desde hoy las dos pantallas leen ESTA lista: la oferta más
+// las candidatas —pool de la operación y libro en ventana—, sin repetir folios, y sólo las BUENAS: lo bloqueado por nota
+// de crédito, reclamo, cesión, veto de la verificación o por estar en otra operación no es oferta posible y no cuenta,
+// que es el mismo filtro del chip «Todo lo disponible». Sin RUT de emisor no hay libro y queda el pool de la operación.
+// La lista se recuerda POR OBJETO de operación (`WeakMap`): el tubo la pide ~100 veces por render y recorrer el libro
+// de cada cliente costaba ~0,5 ms por fila (47 ms por 100, medido el 24-09-2026). El objeto cambia con cada patch —las
+// listas de la operación viven adentro—, y lo de afuera que también decide entra en la clave: el índice de folios en
+// otra operación (`FOLIOS_VER`) y la ventana del libro (`ventanaLibroDias`, política del tenant).
+const _POOL_OPORTUNIDAD = new WeakMap();
+let FOLIOS_VER = 0;
+function poolOportunidad(deal) {
+  if (!deal || deal.agrupado) return [];
+  const firma = FOLIOS_VER + "|" + pol("ventanaLibroDias", 60);
+  const hit = _POOL_OPORTUNIDAD.get(deal);
+  if (hit && hit.firma === firma) return hit.pool;
+  const pool = _poolOportunidadCalc(deal);
+  _POOL_OPORTUNIDAD.set(deal, { firma, pool });
+  return pool;
+}
+function _poolOportunidadCalc(deal) {
+  const oferta = (Array.isArray(deal.facturasOp) ? deal.facturasOp : []).filter(Boolean);
+  const clave = (f) => (f.id != null ? f.id : f.folio);
+  const vistos = new Set();
+  const out = [];
+  for (const f of [...oferta, ...candidatasLibro(deal, oferta)]) {
+    const k = f && clave(f);
+    if (k == null || vistos.has(k)) continue;
+    vistos.add(k);
+    if (estadoCandidata(f, deal).agregable) out.push(f);
+  }
+  return out;
+}
 // Email de cierre SIMULADO como página STANDALONE (se abre en pestaña nueva vía blob URL, igual que el
 // WhatsApp del cliente). Branding Factoring Security. Flujo dentro de la misma pestaña: email → (CTA)
 // login → detalle → firma → éxito; al firmar avisa a la app con postMessage({type:'aceptada', neg}).
@@ -16071,22 +16108,11 @@ function DealDrawer({
                         // función es lo que impide que ofrezcan conjuntos distintos con el mismo nombre.
                         const opcionesInicio = (() => {
                           if (deal.simulado) return [];
-                          const norm = (f) => f;
-                          const vistos = new Set();
-                          const pool = [];
-                          validas.forEach((f) => {
-                            if (f && f.id != null && !vistos.has(f.id)) {
-                              vistos.add(f.id);
-                              pool.push(f);
-                            }
-                          });
-                          Object.keys(grpOt).forEach((dn) =>
-                            (grpOt[dn] || []).forEach((f) => {
-                              if (!f || f.id == null || vistos.has(f.id) || !estadoCandidata(f, deal).agregable) return;
-                              vistos.add(f.id);
-                              pool.push(norm(f));
-                            }),
-                          );
+                          // LA MISMA LISTA QUE LA FILA DEL TUBO (regla 84): «Todo lo disponible» es
+                          // `poolOportunidad`, ni más ni menos. Se armaba acá a mano —la oferta válida más lo
+                          // agregable de `grpOt`— y el tubo armaba la suya sin el libro: dos cuentas del mismo
+                          // hecho, y el usuario las sumó.
+                          const pool = poolOportunidad(deal);
                           // PRIME = Lista Blanca o Deudor Autorizado: es la CALIDAD del deudor, no su cupo.
                           const prime = pool.filter((f) => {
                             const td = tipoDeudorDisp(f);
@@ -43011,17 +43037,12 @@ function analisisDeudoresDeDeal(deal) {
   // La OPORTUNIDAD es todo lo que el cliente tiene disponible —lo que ya está en la oferta más lo que
   // el motor encontró y aún no se selecciona—, no sólo la oferta: la oferta es lo que el ejecutivo
   // elige y vive en «Oferta». Por eso una factura que llega actualiza esta columna sola, sin
-  // quedar «sin incorporar». Se deduplica por id porque un documento puede estar en ambas listas.
-  if (!deal.agrupado && ((deal.facturasOp && deal.facturasOp.length) || (deal.facturasDisponibles && deal.facturasDisponibles.length))) {
-    const vistas = new Set();
-    const todas = [];
-    [...(deal.facturasOp || []), ...(deal.facturasDisponibles || [])].forEach((f) => {
-      const k = f && (f.id != null ? f.id : f.folio);
-      if (k == null || vistas.has(k)) return;
-      vistas.add(k);
-      todas.push(f);
-    });
-    return analisisDeudores(todas);
+  // quedar «sin incorporar». Y ES LA MISMA LISTA QUE EL ARRANQUE DEL DETALLE (regla 84): antes se
+  // juntaban acá la oferta y `facturasDisponibles` —sin el libro del cliente, que el detalle sí
+  // ofrece— y la fila decía 3 facturas donde el detalle mostraba 23.
+  if (!deal.agrupado) {
+    const todas = poolOportunidad(deal);
+    if (todas.length) return analisisDeudores(todas);
   }
   // Sin facturas itemizadas el deudor viene sólo con nombre, así que el RUT se resuelve contra los
   // pares del propio cliente. Si no está, queda vacío y la capacidad lo tratará como sin línea:
@@ -49449,6 +49470,7 @@ export default function PipelineComercial() {
       }
     }
     FOLIOS_EN_OPERACION = idx;
+    FOLIOS_VER++; // invalida la memoria de `poolOportunidad`: una candidata puede haber pasado a «en otra operación»
   }, [deals]);
   useEffect(() => {
     const onMsg = (ev) => {

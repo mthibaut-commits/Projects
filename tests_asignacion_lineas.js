@@ -8975,6 +8975,42 @@
        `excepciones ${critico.vivo.length} vivas / ${critico.snap.length} en versión · mismas reglas ${mismasReglas} · igual crítico ${igualCritico} · igual leve ${igualLeve} · crítico escala ${escala} (${muestra(critico)}) · leve no escala ${noEscala} (${muestra(leve)}) · respaldo único ${respaldoOk} · destinatarios coinciden ${dests}`);
   }
 
+  // 180 · LA OPORTUNIDAD ES UNA SOLA LISTA (regla 84; reportado por el usuario el 24-09-2026: «3 deudores · 3 facturas»
+  // en el tubo y 23 en el detalle). `poolOportunidad` es la oferta más las candidatas —pool de la operación y libro del
+  // cliente en la ventana—, sin repetir folios y sólo las agregables; la fila del tubo (`analisisDeudoresDeDeal`) cuenta
+  // exactamente esa lista. Se prueba sobre un cliente REAL del libro (A1), sin inventar documentos.
+  {
+    // Un emisor con al menos tres facturas a crédito comprables en el libro.
+    const emisor = [...libroPorEmisor().entries()].find(([, docs]) => docs.filter((f) => f.credito && !f.notaCredito && !f.reclamada).length >= 3) || null;
+    const rut180 = emisor ? emisor[0] : "";
+    const libro = emisor ? emisor[1] : [];
+    const buenas = libro.filter((f) => f.credito && !f.notaCredito && !f.reclamada);
+    const base = { id: "T-180", rutEmisor: rut180, cliente: "Cliente 180", facturasOp: [], facturasDisponibles: [] };
+    const pool0 = poolOportunidad(base);
+    const an0 = analisisDeudoresDeDeal(base);
+    const clave = (f) => (f.id != null ? f.id : f.folio);
+    // (a) Sin duplicados y sólo agregables: cada documento entra una vez y ninguno está bloqueado.
+    const sinDup = new Set(pool0.map(clave)).size === pool0.length;
+    const soloBuenas = pool0.length > 0 && pool0.every((f) => estadoCandidata(f, base).agregable);
+    // (b) LA FILA DEL TUBO CUENTA ESA MISMA LISTA: mismas facturas y mismo monto.
+    const montoPool = +pool0.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1);
+    const filaOk = !!an0 && an0.nFacturas === pool0.length && Math.abs(an0.monto - montoPool) < 1;
+    // (c) Una factura de la operación ya BLOQUEADA (reclamada) no cuenta: es lo que «buenas facturas» quiere decir.
+    const bloq = buenas[0] ? { ...buenas[0], id: "T-180-bloq", folio: 99900001, reclamada: true } : null;
+    const conBloq = { ...base, facturasDisponibles: bloq ? [bloq] : [] };
+    const bloqOk = !!bloq && poolOportunidad(conBloq).length === pool0.length && (analisisDeudoresDeDeal(conBloq) || {}).nFacturas === pool0.length;
+    // (d) Una factura del libro que ya está EN LA OFERTA se cuenta una sola vez: la oferta no la duplica.
+    const enOferta = { ...base, facturasOp: pool0.slice(0, 1) };
+    const dedupOk = pool0.length > 0 && poolOportunidad(enOferta).length === pool0.length && (analisisDeudoresDeDeal(enOferta) || {}).nFacturas === pool0.length;
+    // (e) Una factura NUEVA del pool de la operación (fuera del libro por folio) sí suma una.
+    const nueva = buenas[0] ? { ...buenas[0], id: "T-180-nueva", folio: 99900002, reclamada: false, notaCredito: false, porCupo: true } : null;
+    const conNueva = { ...base, facturasDisponibles: nueva ? [nueva] : [] };
+    const sumaOk = !!nueva && poolOportunidad(conNueva).length === pool0.length + 1 && (analisisDeudoresDeDeal(conNueva) || {}).nFacturas === pool0.length + 1;
+    ok("180 la oportunidad es UNA sola lista —la oferta más las candidatas del pool de la operación y del libro del cliente, sin repetir folios y sólo las agregables— y la fila del tubo cuenta exactamente esa lista: mismas facturas y mismo monto que el arranque del detalle",
+       !!emisor && sinDup && soloBuenas && filaOk && bloqOk && dedupOk && sumaOk,
+       `emisor ${rut180 || "—"} · pool ${pool0.length} · sin duplicados ${sinDup} · sólo agregables ${soloBuenas} · la fila cuenta lo mismo ${filaOk} (${an0 ? an0.nFacturas + " fact. · M$" + an0.monto : "—"} vs ${pool0.length} · M$${montoPool}) · la bloqueada no cuenta ${bloqOk} · en la oferta no se duplica ${dedupOk} · la nueva suma ${sumaOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
