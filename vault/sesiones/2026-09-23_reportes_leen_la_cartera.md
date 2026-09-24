@@ -80,3 +80,11 @@ Los 25 cedentes sin ficha en el A5 que sí ceden a Security figuran «Inactivos�
 `COLOC_PROM_12M`; «SOW promedio» (30 %) promedia prospectos en 0 al lado del donut (64 %); `COMPETENCIA_POR_RUT` corta el
 22-06 y deja fuera 3.352 cesiones del 23-06; `COMPETIDORES` (fallback de `competidorDe`) trae a «Security Factoring» y a
 «Coface Chile»; `dashSerie` fabrica las sparklines de varias cards; el Plan Mensual Ejecutivo simula lo «real» con `pcRng`.
+
+## La integración a `main` (24-09, pedido del usuario: «hace el merge»)
+
+`node sincronizar_main.mjs` dijo «al día»: `origin/main` seguía en `0368686`, así que la mezcla no trae nada nuevo y el
+árbol mezclado es el que pasó los siete pasos en la rama (el fuente y las pruebas, byte a byte). La `main` local del clon
+estaba seis commits atrás de `origin/main` sin nada propio: se puso al día con `git branch -f` antes de mezclar, porque
+el hook bloquea en `main` todo `git merge` sin `--no-ff`, también el que sólo avanza. El tablero se actualizó en un commit
+de la rama y no dentro del merge, para que el merge no traiga contenido que no está en ninguno de sus padres.

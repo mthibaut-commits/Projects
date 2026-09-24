@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-23T23:45:00Z
+timestamp: 2026-09-24T01:30:00Z
 ---
 
 # Estado actual
@@ -38,17 +38,17 @@ Casos 172–175, `e2e-76`/`-77`, `regla_76/77/78.test.mjs` ([log](./2026-09-23_r
 >    «Negociación» en una operación ya enviada a comité · **join de empresas SIEMPRE por RUT** (8 sitios; T1) ·
 >    `.bat` una vez · regenerar `Capturas_UI/` (deuda 2) · O01 · 28 · 13-quater · `pipeline.zip`.
 
-## En vuelo · la revisión de Reportes está en la rama de la sesión, sin mezclar a `main`
-`claude/dreamy-bardeen-n3ekp0` trae las reglas 76–79; mezclar a `main` es del usuario, con la verificación sobre el
-árbol MEZCLADO ([`flujo_git.md`](../conocimiento/flujo_git.md)). **Antes de modificar se integra `main`**: skill
-`sincronizar-main` + `node sincronizar_main.mjs` (paso 0 del ciclo).
+## En vuelo · nada: la revisión de Reportes (reglas 76–79) entró a `main` el 24-09
+Por `merge --no-ff` de `claude/dreamy-bardeen-n3ekp0`, a pedido del usuario; `main` no se había movido, así que el árbol
+mezclado es el verificado en la rama ([`flujo_git.md`](../conocimiento/flujo_git.md)). **Antes de modificar se integra
+`main`**: skill `sincronizar-main` + `node sincronizar_main.mjs` (paso 0 del ciclo).
 
 ## Bloqueos · del usuario, desde Windows
 
 El relay git bloquea el BORRADO y `refs/tags/*` con **HTTP 403** (los pushes normales funcionan; el MCP tampoco
-expone borrado). Queda **el tag `v0.1.0`** sobre `bd14091`. Las ramas integradas las borró el usuario el 23-09;
-quedan `main`, la de la sesión, `respaldo/main-2026-09-17` (no se toca) y `claude/local-mauricio-20260910`, la
-ÚNICA copia del estado local del 10-09 (`git cherry` la da `+`: borrarla lo pierde).
+expone borrado). Queda **el tag `v0.1.0`** sobre `bd14091`, y por borrar la rama ya integrada
+`claude/dreamy-bardeen-n3ekp0`. Se quedan `main`, `respaldo/main-2026-09-17` (no se toca) y
+`claude/local-mauricio-20260910`, la ÚNICA copia del estado local del 10-09 (`git cherry` la da `+`: borrarla lo pierde).
 
 ## Deudas anotadas (no bloquean, no olvidar)
 1. **Lista Blanca / Deudor Autorizado, decisiones de negocio**: el activo no trae `VIGENTE_DESDE`/`HASTA`/
