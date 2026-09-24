@@ -4309,6 +4309,15 @@ function cesionesAjenasDeDeal(deal) {
   out.factoring = orden[0] || null;
   return out;
 }
+// ¿Se pierde la oportunidad por cesión a la competencia? Es un HECHO del A2 (regla 78, ADR-0023): se pierde ENTERA sólo
+// si otro factoring ya se llevó TODAS las facturas de la oferta —no queda nada que comprar—; si se llevó una parte, no se
+// pierde: se anota cuántas (`cedidasOtro`) y la oferta sigue con el resto. Sin facturas no se pronuncia. Lo cedido a
+// Security es cartera propia y no cuenta. Antes el cron perdía el 12% de las oportunidades de un cedente que alguna vez
+// cedió afuera con un sorteo (`rndDetBool(aec|id, 0.12)`) sin mirar sus facturas. Pura dado `ced`.
+function perdidaPorCesion(deal, ced = cesionesAjenasDeDeal(deal)) {
+  const nFac = ((deal && deal.facturasOp) || []).length;
+  return { pierde: ced.n > 0 && ced.n >= nFac, n: ced.n, factoring: ced.factoring, folios: ced.folios };
+}
 // ── LAS ACTUALIZACIONES DEL A1 (regla 74) ────────────────────────────────────────────────────────
 // Una notificación posterior a la creación no es una factura nueva: es el documento que ya llegó, con su estado
 // nuevo. El stream la lleva como evento `actualizacion` y el inbound la aplica donde el documento viva.
@@ -20666,47 +20675,44 @@ function WizEdit({ label, unidad, value, step, onChange }) {
 // Benchmark competitivo por deudor: reúne operaciones cursadas y perdidas ante la competencia
 // (tasa ofertada, cesionario, monto) agrupadas por deudor y ordenadas cronológicamente, y arma
 // una estrategia de spread/condiciones para el ejecutivo.
+// SÓLO OPERACIONES DEL TUBO (regla 79). Hasta el 23-09-2026 esto sumaba cinco operaciones de «histórico de mercado» por
+// deudor —clientes ficticios, montos de $50 a $650 que eran millones, competidor por hash— y la tasa de la competencia salía
+// de un hash aunque el ejecutivo la escribe al marcar una pérdida por competencia (`tasaCierreCompetidor`). Ahora la tasa de
+// la competencia es ésa, y sin registro queda vacía: ni se inventa ni entra al promedio. Nuestra tasa, igual: la de la
+// simulación, y sin simular no hay «tasa BICE».
+const _tasaDe = (v) => {
+  const n = parseFloat(v);
+  return n > 0 ? +n.toFixed(2) : null;
+};
+// «DD-MM-AAAA HH:MM:SS…» (`nowStamp`) → ms, o null: la fecha de la fila es la de la operación, no la de hoy.
+const _msDeMarca = (t) => {
+  const m = /^(\d{2})-(\d{2})-(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(String(t || ""));
+  return m ? new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)).getTime() : null;
+};
 function benchmarkPor(deals, by = "deudor") {
-  const hoy = Date.now();
-  const dayMs = 86400000;
   const rows = [];
-  // 1) Entradas reales desde el pipeline (cada fila conserva cliente Y deudor).
   (deals || []).forEach((d) => {
     const deudor = d.deudor;
     if (!deudor) return;
-    const tasa = parseFloat(d.tasa) || d.tasaDescuento || tasaMinIA(deudor) + 0.8;
+    const tasa = _tasaDe(d.tasa) || _tasaDe(d.tasaDescuento);
+    const fecha = _msDeMarca(d.stage === "perdida" ? d.fechaPerdida || d.time : d.time);
     if (["aceptadas", "cesion", "giro"].includes(d.stage)) {
-      rows.push({ fecha: hoy, cliente: d.cliente, deudor, monto: d.monto || 0, tasa: +(+tasa).toFixed(2), ganada: true });
+      rows.push({ fecha, cliente: d.cliente, deudor, monto: d.monto || 0, tasa, ganada: true });
     } else if (d.stage === "perdida" && (d.perdidaCesion || d.cedidaCompetidor)) {
-      const comp = d.cedidaCompetidor || competidorDe(d);
-      const tasaComp = +Math.max(tasaMinIA(deudor), tasa - 0.2 - (hashStr(d.id || "x") % 20) / 100).toFixed(2);
-      rows.push({ fecha: hoy, cliente: d.cliente, deudor, monto: d.monto || 0, tasa: +(+tasa).toFixed(2), ganada: false, competidor: comp, tasaComp });
-    }
-  });
-  // 2) Completar con histórico de mercado (determinista) para los deudores presentes.
-  const cl = ["Constructora Andes SpA", "Áridos del Maipo SpA", "Packaging Biobío SA", "DYNTEL SPA", "Metalúrgica del Bío-Bío"];
-  const deudoresPresentes = [...new Set(rows.map((r) => r.deudor))];
-  deudoresPresentes.forEach((deudor) => {
-    const base = tasaMinIA(deudor);
-    for (let i = 0; i < 5; i++) {
-      const h = hashStr(deudor + "#" + i);
-      const ganada = h % 100 >= 45;
-      const tasa = +(base + 0.4 + (h % 70) / 100).toFixed(2);
-      const comp = COMPETIDORES[h % COMPETIDORES.length];
-      const tasaComp = +Math.max(base, tasa - 0.15 - (h % 25) / 100).toFixed(2);
       rows.push({
-        fecha: hoy - (i + 1) * 2 * dayMs - (h % 5) * dayMs,
-        cliente: cl[h % cl.length],
+        fecha,
+        cliente: d.cliente,
         deudor,
-        monto: 50 + (h % 600),
+        monto: d.monto || 0,
         tasa,
-        ganada,
-        competidor: ganada ? null : comp,
-        tasaComp: ganada ? null : tasaComp,
+        ganada: false,
+        competidor: d.cedidaCompetidor || "Otro factoring",
+        tasaComp: _tasaDe(d.tasaCierreCompetidor),
       });
     }
   });
-  // 3) Agrupar por la dimensión elegida: deudor (pagador) o cliente (cedente).
+  const prom = (xs) => (xs.length ? +(xs.reduce((s, x) => s + x, 0) / xs.length).toFixed(2) : null);
+  // Agrupar por la dimensión elegida: deudor (pagador) o cliente (cedente).
   const map = {};
   rows.forEach((r) => {
     const k = by === "cliente" ? r.cliente : r.deudor;
@@ -20715,12 +20721,18 @@ function benchmarkPor(deals, by = "deudor") {
   });
   return Object.entries(map)
     .map(([key, entries]) => {
-      entries.sort((a, b) => a.fecha - b.fecha);
+      // Cronológico; una fila sin fecha va al final.
+      entries.sort((a, b) => (a.fecha == null ? Infinity : a.fecha) - (b.fecha == null ? Infinity : b.fecha));
       const won = entries.filter((e) => e.ganada);
       const lost = entries.filter((e) => !e.ganada);
-      const avgWon = won.length ? +(won.reduce((s, e) => s + e.tasa, 0) / won.length).toFixed(2) : null;
-      const avgLostOurs = lost.length ? +(lost.reduce((s, e) => s + e.tasa, 0) / lost.length).toFixed(2) : null;
-      const avgComp = lost.length ? +(lost.reduce((s, e) => s + (e.tasaComp || e.tasa), 0) / lost.length).toFixed(2) : null;
+      const avgWon = prom(won.map((e) => e.tasa).filter((x) => x != null));
+      // Lo registrado: la tasa de cierre de la competencia, y —para comparar peras con peras— nuestra tasa en las MISMAS
+      // operaciones perdidas que la tienen registrada.
+      const conTasa = lost.filter((e) => e.tasaComp != null);
+      const pares = conTasa.filter((e) => e.tasa != null);
+      const avgComp = prom(conTasa.map((e) => e.tasaComp));
+      const avgLostOurs = prom(pares.map((e) => e.tasa));
+      const avgCompPares = prom(pares.map((e) => e.tasaComp));
       // Pisos de tasa/spread: por deudor directo; por cliente, promedio de sus deudores.
       const deudoresK = [...new Set(entries.map((e) => e.deudor))];
       const minTasa = by === "cliente" ? +(deudoresK.reduce((s, dd) => s + tasaMinIA(dd), 0) / deudoresK.length).toFixed(2) : tasaMinIA(key);
@@ -20731,9 +20743,11 @@ function benchmarkPor(deals, by = "deudor") {
       const quien = by === "cliente" ? `${key} (cliente)` : `${key} es buen pagador (paga a ${diasPagoDeudor(key)} días, riesgo bajo)`;
       let estrategia;
       if (!lost.length)
-        estrategia = `BICE lidera en ${key}: ganó las ${won.length} operación(es) registradas (tasa promedio ${avgWon}%). Mantén el spread sobre el mínimo (${minSpread}%) para proteger margen; hay espacio para sostener la tasa.`;
+        estrategia = `BICE lidera en ${key}: ganó las ${won.length} operación(es) registradas${avgWon != null ? ` (tasa promedio ${avgWon}%)` : ""}. Mantén el spread sobre el mínimo (${minSpread}%) para proteger margen; hay espacio para sostener la tasa.`;
+      else if (avgComp == null)
+        estrategia = `Se perdieron ${lost.length} operación(es) ante la competencia y ninguna tiene tasa de cierre registrada: al marcar una pérdida por competencia, registra la tasa a la que cerró el otro factoring para poder comparar. Mientras tanto, no bajes del spread mínimo ${minSpread}% (tasa piso ${minTasa}%).`;
       else
-        estrategia = `Se perdieron ${lost.length} operación(es) ante la competencia. Ofrecimos en promedio ${avgLostOurs}% mensual vs ${avgComp}% de la competencia (Δ ${(avgLostOurs - avgComp).toFixed(2)} pts). ${quien}: se recomienda igualar/mejorar con spread ${objetivoSpread}% → tasa objetivo ${objetivoTasa}% mensual, manteniendo 100% de anticipo y giro el mismo día. No bajar del spread mínimo ${minSpread}% (tasa piso ${minTasa}%).`;
+        estrategia = `Se perdieron ${lost.length} operación(es) ante la competencia; ${conTasa.length} con tasa de cierre registrada, en promedio ${avgComp}% mensual${pares.length ? ` (ofrecimos ${avgLostOurs}% vs ${avgCompPares}% en esas mismas operaciones, Δ ${(avgLostOurs - avgCompPares).toFixed(2)} pts)` : ""}. ${quien}: se recomienda igualar/mejorar con spread ${objetivoSpread}% → tasa objetivo ${objetivoTasa}% mensual, manteniendo 100% de anticipo y giro el mismo día. No bajar del spread mínimo ${minSpread}% (tasa piso ${minTasa}%).`;
       return {
         key,
         entries,
@@ -20758,6 +20772,7 @@ function BenchmarkDeudoresModal({ deals, onClose, inline, usuario, esJefe }) {
   const [tareaEmp, setTareaEmp] = useState(null); // empresa (cliente/deudor) para asignar tarea
   const grupos = useMemo(() => benchmarkPor(deals, by), [deals, by]);
   const ffecha = (ts) => {
+    if (ts == null) return "—";
     const d = new Date(ts);
     const p = (n) => String(n).padStart(2, "0");
     return `${p(d.getDate())}/${p(d.getMonth() + 1)}`;
@@ -20906,7 +20921,7 @@ function BenchmarkDeudoresModal({ deals, onClose, inline, usuario, esJefe }) {
                         {fmtMM(e.monto)}
                       </td>
                       <td className="px-3 py-3.5 text-right font-medium" style={{ color: C.ink }}>
-                        {e.tasa.toFixed(2)}%
+                        {e.tasa == null ? "—" : e.tasa.toFixed(2) + "%"}
                       </td>
                       <td className="px-3 py-3.5 text-right font-semibold" style={{ color: e.ganada ? C.green : C.red }}>
                         {e.ganada ? "BICE ✓" : `Perdida · ${e.competidor}`}
@@ -29626,27 +29641,9 @@ const PC_EXECS = Object.keys(EXECS).map((ini) => ({
   jefatura: EXEC_JEFATURA[ini],
   sucursal: EXEC_SUCURSAL[ini],
 }));
-const PC_COMPETIDORES = [
-  { name: "Bci Factoring", mm: 232263 },
-  { name: "Banco De Chile", mm: 205922 },
-  { name: "BICE Factoring", mm: 203553 },
-  { name: "Banco Santander Chile", mm: 135300 },
-  { name: "Scotiabank Chile", mm: 133987 },
-  { name: "Tanner", mm: 102485 },
-  { name: "Banco Estado", mm: 82825 },
-  { name: "Banco Itaú Corpbanca", mm: 79741 },
-];
-// Referencia de mercado del demo, EN PESOS y por mes (regla 61). Venían escritas en miles de millones
-// —«245» por 245 B CLP— y el eje del gráfico de zonas las rotulaba «$13 MM», que dice millones donde
-// el dato son miles de millones. Escribirlas en pesos deja al formateador único resolver la escala.
-const MM = 1e9; // un mil millones de pesos: la unidad en la que estas series se estimaron
-const PC_MERCADO = [245, 200, 215, 210, 206, 191, 196, 193, 192, 188, 184, 196].map((v) => v * MM); // mercado total
-const PC_SECURITY = [60, 57, 62, 63, 61, 58, 59, 59, 60, 59, 57, 58].map((v) => v * MM); // Security
-const PC_ZONA = {
-  Norte: [13.0, 18.2, 15.0, 15.4, 17.0, 12.2, 10.6, 14.3, 14.0, 16.4, 13.2, 15.2].map((v) => v * MM),
-  Centro: [30.0, 21.2, 23.4, 26.4, 28.2, 21.4, 23.6, 18.6, 19.0, 19.4, 18.7, 21.6].map((v) => v * MM),
-  Sur: [15.4, 13.4, 14.0, 16.0, 11.8, 14.6, 12.8, 13.4, 17.2, 14.9, 17.4, 13.0].map((v) => v * MM),
-};
+// Las series de referencia «de mercado» que vivían acá (`PC_MERCADO`, `PC_SECURITY`, `PC_ZONA`) y la lista fija de
+// competidores (`PC_COMPETIDORES`, con BICE —el tenant— adentro) se retiraron el 23-09-2026 (regla 76): Reportes lee la
+// ventana del SOW de los clientes del alcance y el A2, y ninguna cifra de esa pestaña se escribe a mano.
 const fmtMMc = (n) => "M$" + Math.round((n || 0) / 1e6).toLocaleString("es-CL");
 // ============================================================
 // SANKEY "Origen → Cierre": de dónde nace la oportunidad (regla del inbound o alta manual del ejecutivo),
@@ -30649,12 +30646,13 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
       ),
     [fZona, fJefatura, fEjec, soloExec, usuario],
   );
-  // Segmento SOW de un cliente (mismo vocabulario que Tareas / pipeline).
-  const segSow = (c) => (c.estado === "Inactivo" ? "nuevo" : c.estado === "Competencia" ? "bajando" : c.sow >= c.target ? "target" : "creciendo");
-  // CARTERA en el alcance: clientes reales (PC_CLIENTES) del/los ejecutivo(s), filtrados por estado y SOW.
+  // CARTERA en el alcance: clientes reales (PC_CLIENTES) del/los ejecutivo(s), filtrados por estado y por segmento SOW
+  // (`segmentoSowCartera`: bajo la meta manda la tendencia, regla 76).
   const clientesScope = useMemo(() => {
     const nombres = new Set(execsFiltrados.map((e) => e.nombre));
-    return PC_CLIENTES.filter((c) => nombres.has(c.ej) && (fEstado === "todos" || c.estado === fEstado) && (fSow === "todos" || segSow(c) === fSow));
+    return PC_CLIENTES.filter(
+      (c) => nombres.has(c.ej) && (fEstado === "todos" || c.estado === fEstado) && (fSow === "todos" || segmentoSowCartera(c) === fSow),
+    );
   }, [execsFiltrados, fEstado, fSow]);
   const hayFiltro = !!soloExec || !!jefeInis || fZona !== "todas" || fJefatura !== "todas" || fEjec !== "todos" || fEstado !== "todos" || fSow !== "todos";
   const filtrosDeal = { deudor: fDeudor, linea: fLinea };
@@ -30711,6 +30709,9 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
       inac: inac.length,
       sowProm,
       brecha,
+      // El donut y los dos gráficos de la pestaña Cliente: la plata de la ventana del alcance (regla 76).
+      sowCartera: sowDeCartera(clientesScope),
+      series: seriesCartera(clientesScope, zonas),
       cedido: mm(clientesScope),
       segmentos: [
         seg(sec, "Operando con Security", "operan con Security", "#703EFF", Check),
@@ -31539,6 +31540,122 @@ async function exportarCandidatasXlsx(soloExec, usuarioNombre) {
   });
   return { empresas: cands.length, facturas: filasFact.length - 1 };
 }
+// ── LAS CIFRAS DE OPERACIÓN, SEMANA A SEMANA (regla 77) ─────────────────────────────────────────────
+// El Dashboard y Performance comercial suman cada cliente con ESTAS funciones, sobre dos índices por semana: el A2 (lo
+// cedido, a quién y sobre qué deudor) y el A1 (lo facturado). Hasta el 23-09-2026 lo facturado se DEDUCÍA de lo cedido
+// con una razón inventada por cliente (`0,50 + hash(RUT) % 30 / 100`); lo del factoring target y lo de los deudores
+// prime se repartían con la proporción de todo el período, y con eso el SOW prime salía idéntico al general; y la
+// participación frente al target se calculaba sin que ninguna pantalla la mostrara.
+let _IX_CARTERA = null;
+function indicesCartera() {
+  if (_IX_CARTERA) return _IX_CARTERA;
+  const esPrime = (rut, nombre) => {
+    const t = tipoDeudor(rut, nombre);
+    return t === "Lista Blanca" || t === "Deudor Autorizado";
+  };
+  // A2: cedente → semana → { total, sec, prime, primeSec, porCes: cesionario → { monto, prime } }. El target NO se
+  // resuelve acá: es configuración del tenant (regla 13-duodecies) y se aplica al sumar.
+  const ces = new Map();
+  for (const a of (typeof window !== "undefined" && window.AECSYNC) || []) {
+    if (!a || !a.RUTCedente || !a.RUTFactoring) continue;
+    const sem = lunesISO(a.FechaCesion);
+    if (!sem) continue;
+    let porSem = ces.get(a.RUTCedente);
+    if (!porSem) ces.set(a.RUTCedente, (porSem = new Map()));
+    let w = porSem.get(sem);
+    if (!w) porSem.set(sem, (w = { total: 0, sec: 0, prime: 0, primeSec: 0, porCes: new Map() }));
+    const m = Math.round(+a.MontoCesion || 0),
+      nuestra = a.RUTFactoring === BICE_RUT,
+      prime = esPrime(a.RUTReceptor, a.RazonSocialReceptor);
+    w.total += m;
+    if (nuestra) w.sec += m;
+    if (prime) {
+      w.prime += m;
+      if (nuestra) w.primeSec += m;
+    }
+    const x = w.porCes.get(a.RUTFactoring) || { monto: 0, prime: 0 };
+    x.monto += m;
+    if (prime) x.prime += m;
+    w.porCes.set(a.RUTFactoring, x);
+  }
+  // A1: emisor → semana de EMISIÓN → { emitido, emitidoPrime }, por `documentosDTE()`: la única lectura del log fuera
+  // del stream (regla 74).
+  const emi = new Map();
+  for (const d of documentosDTE()) {
+    if (!d || !d.RUTEmisor || !d.FchEmis) continue;
+    const sem = lunesISO(d.FchEmis);
+    let porSem = emi.get(d.RUTEmisor);
+    if (!porSem) emi.set(d.RUTEmisor, (porSem = new Map()));
+    const w = porSem.get(sem) || { emitido: 0, emitidoPrime: 0 };
+    const m = Math.round(+d.MntTotal || 0);
+    w.emitido += m;
+    if (esPrime(d.RUTRecep, d.RznSocRecep)) w.emitidoPrime += m;
+    porSem.set(sem, w);
+  }
+  _IX_CARTERA = { ces, emi };
+  return _IX_CARTERA;
+}
+// Lo de UN cliente en un rango de semanas —`desde` y `hasta` son lunes y los dos se incluyen—: lo cedido, lo ganado y
+// lo que se llevó el factoring target; lo cedido a deudores prime y lo que de eso fue nuestro o del target; y lo
+// facturado. Pura: recibe los índices del cliente y el predicado del target.
+function sumarSemanas(ces, emi, desde, hasta, esTarget = () => false) {
+  const r = { cedido: 0, ganado: 0, aTarget: 0, cedidoPrime: 0, ganadoPrime: 0, aTargetPrime: 0, facturado: 0, facturadoPrime: 0 };
+  const dentro = (sem) => sem >= desde && sem <= hasta;
+  for (const [sem, w] of ces || []) {
+    if (!dentro(sem)) continue;
+    r.cedido += w.total;
+    r.ganado += w.sec;
+    r.cedidoPrime += w.prime;
+    r.ganadoPrime += w.primeSec;
+    for (const [rut, x] of w.porCes)
+      if (esTarget(rut)) {
+        r.aTarget += x.monto;
+        r.aTargetPrime += x.prime;
+      }
+  }
+  for (const [sem, w] of emi || []) {
+    if (!dentro(sem)) continue;
+    r.facturado += w.emitido;
+    r.facturadoPrime += w.emitidoPrime;
+  }
+  return r;
+}
+// La FILA de un cliente del A5 en un rango. Lo cedido, lo ganado y las operaciones salen de su serie semanal —el A2
+// semana a semana, regla 13-undecies—; el target, el prime y lo facturado, de `sumarSemanas`. La usan el Dashboard y
+// Performance comercial: dos pantallas no pueden decir dos cifras del mismo cliente en el mismo rango.
+function filaCartera(s, desde, hasta, ix = indicesCartera(), esTarget = esFactoringTarget) {
+  let cedido = 0,
+    ganado = 0,
+    ops = 0;
+  for (const w of (s && s.HistoricoSemanal) || []) {
+    if (w.Semana < desde || w.Semana > hasta) continue;
+    cedido += Math.round(+w.MontoTotal || 0);
+    ganado += Math.round(+w.MontoBICE || 0);
+    ops += +w.NumCesiones || 0;
+  }
+  const rut = s && s.RUTCliente;
+  return { ...sumarSemanas(ix.ces.get(rut), ix.emi.get(rut), desde, hasta, esTarget), cedido, ganado, ops };
+}
+// El agregado de varias filas, con sus porcentajes. `sowPct` queda en 0 sin cesiones, como siempre se mostró; los que
+// agrega la regla 77 son `null` sin base, porque «no hubo cesiones a deudores prime» no es «0% en deudores prime»:
+//  · sowPrimePct    — lo ganado en deudores prime sobre lo cedido a deudores prime (nunca el SOW general);
+//  · sowTargetPct   — la participación propia FRENTE al factoring target: de lo cedido a Security o al target, lo nuestro;
+//  · targetPrimePct — lo que el target se llevó de lo cedido a deudores prime.
+function sumarFilas(filas) {
+  const r = { cedido: 0, ganado: 0, ops: 0, aTarget: 0, cedidoPrime: 0, ganadoPrime: 0, aTargetPrime: 0, facturado: 0, facturadoPrime: 0 };
+  for (const f of filas || []) for (const k in r) r[k] += (f && f[k]) || 0;
+  const pct = (a, b) => (b > 0 ? (a / b) * 100 : null);
+  return {
+    ...r,
+    perdido: Math.max(0, r.cedido - r.ganado),
+    sowPct: r.cedido > 0 ? (r.ganado / r.cedido) * 100 : 0,
+    sowPrimePct: pct(r.ganadoPrime, r.cedidoPrime),
+    sowTargetPct: pct(r.ganado, r.ganado + r.aTarget),
+    targetPrimePct: pct(r.aTargetPrime, r.cedidoPrime),
+  };
+}
+// El rótulo de la participación frente al target, para las dos pantallas que la muestran.
+const frenteATarget = (pct) => (pct == null ? "sin cesiones frente al factoring target" : `${Math.round(pct)}% frente a ${targetEtiqueta()}`);
 function dashboardKPIs(usuario, deals) {
   const soloExec = EXECS[usuario] || null; // nombre del ejecutivo, o null (jefe/gerencia/admin → todo)
   const execScope = execsVisiblesDe(usuario); // códigos visibles, null = todos, [] = ninguno
@@ -31548,7 +31665,7 @@ function dashboardKPIs(usuario, deals) {
   const total = mis.length;
   const inactivas = mis.filter((c) => c.estado === "Inactivo").length;
   const activas = total - inactivas;
-  const operanOtros = mis.filter((c) => c.estado === "Competencia").length;
+  const operanOtros = mis.filter(cedeAOtros).length; // ceden algo a otros en la ventana: lo que la card cuenta con el churn
   const churn = churnResumen(churnCartera(soloExec)); // «operan con otros», abierto por segmento
   // Cobertura de línea de las empresas ACTIVAS: sin línea aprobada no pueden cursar, y una línea
   // insuficiente frena el SOW. Misma fuente que el menú Líneas (LINEAS_DATA + lineaRecomendacion),
@@ -31586,85 +31703,33 @@ function dashboardKPIs(usuario, deals) {
   const [Y, M] = semMax.split("-").map(Number);
   const mesIni = `${Y}-${String(M).padStart(2, "0")}-01`;
   const sem8 = semanas.slice(-8);
-  // ── Índice AECSync por RUT emisor: buenos deudores (prime) y lo cedido a nosotros dentro de prime ──
-  const aecIdx = {};
-  (window.AECSYNC || []).forEach((a) => {
-    if (!a || !a.RUTEmisor) return;
-    const g = aecIdx[a.RUTEmisor] || (aecIdx[a.RUTEmisor] = { t: 0, b: 0, bBice: 0, bBanco: 0 });
-    const mm = +a.MontoCesion || 0;
-    g.t += mm;
-    const td = tipoDeudor(a.RUTReceptor, a.RazonSocialReceptor);
-    if (td === "Lista Blanca" || td === "Deudor Autorizado") {
-      // deudor prime
-      g.b += mm;
-      if (a.RUTFactoring === BICE_RUT)
-        g.bBice += mm; // prime cedido a nosotros
-      else if (esFactoringTarget(a.RazonSocialFactoring)) g.bBanco += mm; // prime cedido al factoring target (competencia)
-    }
+  // ── Operaciones del alcance sobre un rango de semanas (regla 77): cada cliente con `filaCartera` y el agregado con
+  // `sumarFilas` —la MISMA suma de Performance comercial—. Lo facturado es el A1, no lo cedido dividido por una razón
+  // inventada; lo del factoring target y lo de los deudores prime es el A2 sumado semana a semana, no una proporción. ──
+  const ix = indicesCartera();
+  const delAlcance = (window.SHARE_OF_WALLET || []).filter((s) => {
+    const cod = EXEC_INI_POR_NOMBRE[s.Ejecutivo] || null;
+    return !!cod && (!execScope || execScope.includes(cod));
   });
-  // ── Agregación de operaciones del ejecutivo sobre un rango de semanas ──
   const opAgg = (desde, hasta) => {
-    const r = { emitido: 0, cedido: 0, ganado: 0, perdBanco: 0, perdOtros: 0, buenas: 0, facturado: 0, facturadoBuenas: 0, ops: 0 };
-    (window.SHARE_OF_WALLET || []).forEach((s) => {
-      const cod = EXEC_INI_POR_NOMBRE[s.Ejecutivo] || null;
-      if (!cod || (execScope && !execScope.includes(cod))) return;
-      const inR = (s.HistoricoSemanal || []).filter((w) => w.Semana >= desde && w.Semana <= hasta);
-      let total2 = 0,
-        ganado = 0,
-        ops = 0;
-      inR.forEach((w) => {
-        total2 += w.MontoTotal || 0;
-        ganado += w.MontoBICE || 0;
-        ops += w.NumCesiones || 0;
-      });
-      const perdido = Math.max(0, total2 - ganado);
-      const idx = aecIdx[s.RUTCliente] || { t: 0, b: 0 };
-      const bpct = idx.t > 0 ? idx.b / idx.t : s.Segmento === "Top" ? 0.85 : s.Segmento === "Medio" ? 0.6 : 0.4;
-      const cm = competenciaDe(s.RUTCliente);
-      let ratioBanco = 0;
-      if (cm) {
-        const perd = Math.max(0, cm.total - cm.bice);
-        const banco = (cm.comp || []).filter((c) => esFactoringTarget(c.name)).reduce((a, c) => a + c.monto, 0);
-        ratioBanco = perd > 0 ? Math.min(1, banco / perd) : 0;
-      }
-      const tasaCesion = 0.5 + (Math.abs(hashStr(s.RUTCliente + "fac")) % 30) / 100; // cedido/emitido 0.50–0.79
-      const facturado = total2 > 0 ? total2 / tasaCesion : 0;
-      r.emitido += total2;
-      r.cedido += total2;
-      r.ganado += ganado;
-      r.ops += ops;
-      r.perdBanco += perdido * ratioBanco;
-      r.perdOtros += perdido * (1 - ratioBanco);
-      r.buenas += total2 * bpct;
-      r.facturado += facturado;
-      r.facturadoBuenas += facturado * bpct;
-    });
-    r.perdido = r.perdBanco + r.perdOtros;
-    r.sowPct = r.cedido > 0 ? (r.ganado / r.cedido) * 100 : 0;
-    r.cedidoPct = r.facturado > 0 ? Math.round((r.cedido / r.facturado) * 100) : 0;
-    r.buenasPct = r.facturado > 0 ? Math.round((r.facturadoBuenas / r.facturado) * 100) : 0;
-    r.sowTargetPct = r.ganado + r.perdBanco > 0 ? (r.ganado / (r.ganado + r.perdBanco)) * 100 : 0; // nuestra participación vs factorings target
-    return r;
+    const a = sumarFilas(delAlcance.map((s) => filaCartera(s, desde, hasta, ix)));
+    return {
+      ...a,
+      emitido: a.cedido,
+      perdBanco: a.aTarget,
+      perdOtros: Math.max(0, a.perdido - a.aTarget),
+      buenas: a.cedidoPrime,
+      facturadoBuenas: a.facturadoPrime,
+      cedidoPct: a.facturado > 0 ? Math.round((a.cedido / a.facturado) * 100) : 0,
+      buenasPct: a.facturado > 0 ? Math.round((a.facturadoPrime / a.facturado) * 100) : 0,
+    };
   };
   const kpi = opAgg(mesIni, semMax);
   const serieSem = sem8.map((sm) => opAgg(sm, sm)); // 8 puntos semanales para los sparklines de operaciones
-  // SOW en deudores prime (buenos deudores), sobre AECSync del alcance del ejecutivo
-  let primeB = 0,
-    primeBice = 0,
-    primeBanco = 0;
-  (window.SHARE_OF_WALLET || []).forEach((s) => {
-    const cod = EXEC_INI_POR_NOMBRE[s.Ejecutivo] || null;
-    if (!cod || (execScope && !execScope.includes(cod))) return;
-    const idx = aecIdx[s.RUTCliente];
-    if (idx) {
-      primeB += idx.b;
-      primeBice += idx.bBice;
-      primeBanco += idx.bBanco;
-    }
-  });
-  const sowPrimePct = primeB > 0 ? (primeBice / primeB) * 100 : kpi.sowPct;
-  // Participación del FACTORING TARGET (la competencia que el tenant configura) en los deudores prime → se busca REDUCIR.
-  const compTargetPrimePct = primeB > 0 ? (primeBanco / primeB) * 100 : 0;
+  // El SOW en deudores prime y lo que el factoring target se lleva de ellos, del MISMO mes que el resto de las cards: se
+  // medían sobre todo el período y la card «SOW» mezclaba el mes con el histórico. Sin cesiones prime son `null`.
+  const sowPrimePct = kpi.sowPrimePct;
+  const compTargetPrimePct = kpi.targetPrimePct;
   // ── Metas del mes en curso ──
   const nvMeta = nuevasEmpMetaMes(inis, MES_ACT);
   const targetProm = mis.length ? Math.round(mis.reduce((s, c) => s + (c.target || 0), 0) / mis.length) : 61;
@@ -32118,8 +32183,10 @@ function DashboardView({ usuario, deals, onVerTareas, onVerClientes, onVerChurn 
   const o = d.operaciones,
     m = d.metas,
     t = d.tareas;
+  // Sin cesiones a deudores prime no hay SOW prime (`null`, regla 77): se muestra «—» y no un 0% que nadie midió.
   const sow = Math.round(o.sowPct),
-    sowPrime = Math.round(d.sowPrimePct);
+    sowPrime = d.sowPrimePct == null ? null : Math.round(d.sowPrimePct),
+    txtPrime = sowPrime == null ? "—" : sowPrime + "%";
   const pct = (real, meta) => (meta > 0 ? Math.round((real / meta) * 100) : 0);
   const emp = d.empresas;
   return (
@@ -32256,7 +32323,14 @@ function DashboardView({ usuario, deals, onVerTareas, onVerClientes, onVerChurn 
           sub={`${fmtMMc(o.buenas)} de buenos deudores`}
           serie={d.serieSem.map((x) => x.cedido)}
         />
-        <DashCard Icon={Check} col="#16A34A" valor={fmtMMc(o.ganado)} label="Cedido a Security" sub={`SOW ${sow}%`} serie={d.serieSem.map((x) => x.ganado)} />
+        <DashCard
+          Icon={Check}
+          col="#16A34A"
+          valor={fmtMMc(o.ganado)}
+          label="Cedido a Security"
+          sub={`SOW ${sow}% · ${frenteATarget(o.sowTargetPct)}`}
+          serie={d.serieSem.map((x) => x.ganado)}
+        />
         <DashCard
           Icon={ArrowDownRight}
           col="#EF4444"
@@ -32265,7 +32339,7 @@ function DashboardView({ usuario, deals, onVerTareas, onVerClientes, onVerChurn 
           sub={`${fmtMMc(o.perdBanco)} a factoring target · ${fmtMMc(o.perdOtros)} otros`}
           serie={d.serieSem.map((x) => x.perdido)}
         />
-        <DashCard Icon={Target} col="#2563EB" valor={`${sow}%`} label="SOW" sub={`${sowPrime}% en deudores prime`} serie={d.serieSem.map((x) => x.sowPct)} />
+        <DashCard Icon={Target} col="#2563EB" valor={`${sow}%`} label="SOW" sub={`${txtPrime} en deudores prime`} serie={d.serieSem.map((x) => x.sowPct)} />
       </Section>
       <Section title="Tareas">
         {/* Cada card de Tareas abre el menú Tareas ya filtrado por ese tipo de ítem. */}
@@ -32377,7 +32451,7 @@ function DashboardView({ usuario, deals, onVerTareas, onVerClientes, onVerChurn 
           tag="SOW Prime"
           valor={
             <>
-              {sowPrime}%{" "}
+              {txtPrime}{" "}
               <span className="t10 font-normal" style={{ color: C.faint }}>
                 / {m.targetProm}%
               </span>
@@ -32393,7 +32467,7 @@ function DashboardView({ usuario, deals, onVerTareas, onVerClientes, onVerChurn 
           tag="SOW Competencia"
           valor={
             <>
-              {Math.round(m.compTargetReal)}%{" "}
+              {m.compTargetReal == null ? "—" : Math.round(m.compTargetReal) + "%"}{" "}
               <span className="t10 font-normal" style={{ color: C.faint }}>
                 / ≤ {m.compTargetMeta}%
               </span>
@@ -32448,19 +32522,16 @@ function ReportePerformance({ usuario, inline, onClose }) {
   const hasta = (fDesde <= fHasta ? fHasta : fDesde) || semMax;
   // Alcance por rol: ejecutivo → su cartera; jefe de grupo → sus ejecutivos; gerencia/admin → todo.
   const execScope = execsVisiblesDe(usuario);
-  // Índice AECSync por cliente: (a) % de buenos deudores sobre lo cedido; (b) pérdida (cesiones a la
-  // competencia) sobre deudores PRIME (Lista Blanca / Autorizado) desglosada por deudor; (c) cesiones a los
-  // factorings TARGET (los que el tenant configura) desglosadas por factoring. Deudores prime = buenos deudores.
+  // Los DESGLOSES de los tooltips (por deudor prime y por factoring target), del A2 de todo el período: se reparten sobre
+  // la cifra de la fila, que es la exacta del rango (`desgloseItems`). Las cifras mismas ya no salen de acá (regla 77).
   const aecIdx = useMemo(() => {
     const m = {};
     (window.AECSYNC || []).forEach((a) => {
       if (!a || !a.RUTEmisor) return;
-      const g = m[a.RUTEmisor] || (m[a.RUTEmisor] = { t: 0, b: 0, deudorPrime: {}, deudorFact: {}, factTarget: {} });
+      const g = m[a.RUTEmisor] || (m[a.RUTEmisor] = { deudorPrime: {}, deudorFact: {}, factTarget: {} });
       const mm = +a.MontoCesion || 0;
-      g.t += mm;
       const td = tipoDeudor(a.RUTReceptor, a.RazonSocialReceptor);
       const esPrime = td === "Lista Blanca" || td === "Deudor Autorizado";
-      if (esPrime) g.b += mm;
       const esNuestro = a.RUTFactoring === BICE_RUT;
       if (!esNuestro) {
         // cesión perdida ante la competencia
@@ -32479,43 +32550,20 @@ function ReportePerformance({ usuario, inline, onClose }) {
     });
     return m;
   }, []);
-  const buenShare = useMemo(() => {
-    const out = {};
-    for (const k in aecIdx) out[k] = aecIdx[k].t > 0 ? aecIdx[k].b / aecIdx[k].t : 0;
-    return out;
-  }, [aecIdx]);
-  // Registro por cliente, agregado en el rango de semanas seleccionado.
+  // Los índices por semana del A1 y del A2 (regla 77): la misma suma que usa el Dashboard.
+  const ix = useMemo(() => indicesCartera(), []);
+  // Registro por cliente en el rango de semanas seleccionado, sumado semana a semana con `filaCartera`: lo facturado es
+  // el A1 —no lo cedido dividido por una razón inventada— y lo del target y los deudores prime es el A2 —no una
+  // proporción de todo el período—.
   const clientes = useMemo(() => {
     return (window.SHARE_OF_WALLET || [])
       .map((s) => {
         const execCod = EXEC_INI_POR_NOMBRE[s.Ejecutivo] || null;
         if (!execCod || (execScope && !execScope.includes(execCod))) return null;
-        const cm = competenciaDe(s.RUTCliente);
-        let ratioBanco = 0;
-        if (cm) {
-          const perd = Math.max(0, cm.total - cm.bice);
-          const banco = (cm.comp || []).filter((c) => esFactoringTarget(c.name)).reduce((a, c) => a + c.monto, 0);
-          ratioBanco = perd > 0 ? Math.min(1, banco / perd) : 0;
-        }
-        const hsFull = s.HistoricoSemanal || [];
-        const inR = hsFull.filter((w) => w.Semana >= desde && w.Semana <= hasta);
-        let total = 0,
-          ganado = 0,
-          ops = 0;
-        inR.forEach((w) => {
-          total += w.MontoTotal || 0;
-          ganado += w.MontoBICE || 0;
-          ops += w.NumCesiones || 0;
-        });
-        const perdido = Math.max(0, total - ganado);
-        const perdBanco = perdido * ratioBanco;
-        const bpct = buenShare[s.RUTCliente] != null ? buenShare[s.RUTCliente] : s.Segmento === "Top" ? 0.85 : s.Segmento === "Medio" ? 0.6 : 0.4;
-        // Facturación EMITIDA del cliente (mayor que lo cedido a factoring): tasa de cesión determinista por RUT.
-        const tasaCesion = 0.5 + (Math.abs(hashStr(s.RUTCliente + "fac")) % 30) / 100; // 0.50–0.79 = cedido / emitido
-        const facturado = total > 0 ? +(total / tasaCesion).toFixed(1) : 0;
+        const f = filaCartera(s, desde, hasta, ix);
         const idx = aecIdx[s.RUTCliente] || { deudorPrime: {}, deudorFact: {}, factTarget: {} };
-        const perdidoPrime = +(perdido * bpct).toFixed(1); // pérdida sobre deudores prime (buenos)
         return {
+          ...f,
           rut: s.RUTCliente,
           cliente: s.RazonSocialCliente,
           execCod,
@@ -32523,63 +32571,43 @@ function ReportePerformance({ usuario, inline, onClose }) {
           segmento: s.Segmento,
           prime: s.Segmento === "Top",
           tendencia: s.SOWTendencia,
-          emitido: total,
-          ganado,
-          perdido,
-          perdBanco,
-          perdOtros: perdido - perdBanco,
-          perdidoPrime,
-          ops,
-          sowPct: total > 0 ? (ganado / total) * 100 : 0,
-          buenas: total * bpct,
-          facturado,
-          facturadoBuenas: +(facturado * bpct).toFixed(1),
-          activo: ops > 0 || total > 0,
-          hs: hsFull,
+          activo: f.ops > 0 || f.cedido > 0,
+          sw: s,
+          hs: s.HistoricoSemanal || [],
           deudorPrime: idx.deudorPrime,
           deudorFact: idx.deudorFact,
           factTarget: idx.factTarget,
         };
       })
       .filter(Boolean);
-  }, [desde, hasta, buenShare, aecIdx]);
+  }, [desde, hasta, aecIdx, ix]);
   const jefaturasScope = useMemo(() => [...new Set(clientes.map((c) => c.jefatura))].sort(), [clientes]);
   const execsDe = (jef) => Object.keys(EXECS).filter((e) => EXEC_JEFATURA[e] === jef && (!execScope || execScope.includes(e)));
-  // Agrega métricas de un conjunto de clientes.
+  // Agrega métricas de un conjunto de clientes con `sumarFilas` (regla 77), y les pone los nombres que la pantalla ya usa:
+  // `emitido` es lo CEDIDO (así se llamaba) y `facturado` lo emitido según el A1.
   const agg = (cs) => {
-    const r = {
+    const a = sumarFilas(cs);
+    let emitieron = 0,
+      prime = 0;
+    for (const c of cs) {
+      if (c.activo) emitieron++;
+      if (c.prime) prime++;
+    }
+    return {
+      ...a,
       n: cs.length,
-      emitieron: 0,
-      ops: 0,
-      emitido: 0,
-      ganado: 0,
-      perdBanco: 0,
-      perdOtros: 0,
-      perdidoPrime: 0,
-      buenas: 0,
-      facturado: 0,
-      facturadoBuenas: 0,
-      prime: 0,
+      emitieron,
+      prime,
+      emitido: a.cedido,
+      perdBanco: a.aTarget,
+      perdOtros: Math.max(0, a.perdido - a.aTarget),
+      perdidoPrime: Math.max(0, a.cedidoPrime - a.ganadoPrime),
+      buenas: a.cedidoPrime,
+      facturadoBuenas: a.facturadoPrime,
+      primePct: cs.length > 0 ? Math.round((prime / cs.length) * 100) : 0,
+      buenasPct: a.cedido > 0 ? Math.round((a.cedidoPrime / a.cedido) * 100) : 0,
+      facturadoBuenasPct: a.facturado > 0 ? Math.round((a.facturadoPrime / a.facturado) * 100) : 0,
     };
-    cs.forEach((c) => {
-      if (c.activo) r.emitieron++;
-      r.ops += c.ops;
-      r.emitido += c.emitido;
-      r.ganado += c.ganado;
-      r.perdBanco += c.perdBanco;
-      r.perdOtros += c.perdOtros;
-      r.perdidoPrime += c.perdidoPrime || 0;
-      r.buenas += c.buenas;
-      r.facturado += c.facturado;
-      r.facturadoBuenas += c.facturadoBuenas;
-      if (c.prime) r.prime++;
-    });
-    r.perdido = r.perdBanco + r.perdOtros;
-    r.sowPct = r.emitido > 0 ? (r.ganado / r.emitido) * 100 : 0;
-    r.primePct = r.n > 0 ? Math.round((r.prime / r.n) * 100) : 0;
-    r.buenasPct = r.emitido > 0 ? Math.round((r.buenas / r.emitido) * 100) : 0;
-    r.facturadoBuenasPct = r.facturado > 0 ? Math.round((r.facturadoBuenas / r.facturado) * 100) : 0;
-    return r;
   };
   // Alcance actual según el drill.
   const scope = clientes.filter((c) => (path.length < 1 || c.jefatura === path[0]) && (path.length < 2 || c.execCod === path[1]));
@@ -32600,27 +32628,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
         : scope
             .slice()
             .sort((a, b) => b.emitido - a.emitido)
-            .map((c) => ({
-              key: c.rut,
-              label: c.cliente,
-              drill: false,
-              cs: [c],
-              n: 1,
-              emitieron: c.activo ? 1 : 0,
-              ops: c.ops,
-              emitido: c.emitido,
-              ganado: c.ganado,
-              perdBanco: c.perdBanco,
-              perdOtros: c.perdOtros,
-              perdidoPrime: c.perdidoPrime,
-              perdido: c.perdido,
-              sowPct: c.sowPct,
-              prime: c.prime ? 1 : 0,
-              primePct: c.prime ? 100 : 0,
-              buenas: c.buenas,
-              buenasPct: c.emitido > 0 ? Math.round((c.buenas / c.emitido) * 100) : 0,
-              empresa: c,
-            }));
+            .map((c) => ({ key: c.rut, label: c.cliente, drill: false, cs: [c], ...agg([c]), empresa: c }));
   const filasOrden = filas.slice().sort((a, b) => b.emitido - a.emitido);
   const bajar = (f) => {
     if (!f.drill) return;
@@ -32691,26 +32699,19 @@ function ReportePerformance({ usuario, inline, onClose }) {
   const serie = useMemo(
     () =>
       sem4.map((sm) => {
-        let total = 0,
-          ganado = 0,
-          banco = 0,
-          buenas = 0;
-        scope.forEach((c) => {
-          const w = c.hs.find((x) => x.Semana === sm);
-          if (!w) return;
-          const t = w.MontoTotal || 0,
-            g = w.MontoBICE || 0;
-          total += t;
-          ganado += g;
-          const perd = Math.max(0, t - g);
-          const rb = c.perdido > 0 ? c.perdBanco / c.perdido : 0;
-          banco += perd * rb;
-          buenas += t * (c.emitido > 0 ? c.buenas / c.emitido : 0);
-        });
-        const perdido = Math.max(0, total - ganado);
-        return { sem: sm, emitido: total, buenas, ganado, perdBanco: banco, perdOtros: perdido - banco, sowPct: total > 0 ? (ganado / total) * 100 : 0 };
+        const a = sumarFilas(scope.map((c) => filaCartera(c.sw, sm, sm, ix)));
+        return {
+          sem: sm,
+          emitido: a.cedido,
+          buenas: a.cedidoPrime,
+          ganado: a.ganado,
+          perdBanco: a.aTarget,
+          perdOtros: Math.max(0, a.perdido - a.aTarget),
+          sowPct: a.sowPct,
+          sowTargetPct: a.sowTargetPct,
+        };
       }),
-    [scope, sem4],
+    [scope, sem4, ix],
   );
   const sowIni = serie.length ? serie[0].sowPct : 0,
     sowFin = serie.length ? serie[serie.length - 1].sowPct : 0;
@@ -32782,7 +32783,14 @@ function ReportePerformance({ usuario, inline, onClose }) {
           s={`por ${fmtMMc(kpi.facturadoBuenas)} · ${kpi.facturadoBuenasPct}%`}
         />
         <KpiStat Icon={BarChart2} col="#7C3AED" v={fmtMMc(kpi.emitido)} l="Total Cedido" s={`${fmtMMc(kpi.buenas)} de buenos deudores`} />
-        <KpiStat Icon={Check} col="#16A34A" v={fmtMMc(kpi.ganado)} l="Ganado (Security)" s={`SOW ${Math.round(kpi.sowPct)}%`} />
+        {/* La participación propia FRENTE al factoring target (regla 77): de lo cedido a Security o al target, lo nuestro. */}
+        <KpiStat
+          Icon={Check}
+          col="#16A34A"
+          v={fmtMMc(kpi.ganado)}
+          l="Ganado (Security)"
+          s={`SOW ${Math.round(kpi.sowPct)}% · ${frenteATarget(kpi.sowTargetPct)}`}
+        />
         <KpiStat
           Icon={ArrowDownRight}
           col="#EF4444"
@@ -32790,20 +32798,22 @@ function ReportePerformance({ usuario, inline, onClose }) {
           l="Perdido"
           s={`${fmtMMc(kpi.perdBanco)} a factoring target (${targetNombres()}) · ${fmtMMc(kpi.perdOtros)} otros`}
         />
+        {/* Se llamaba «SOW Target Deudores Prime» y mostraba el SOW general: lo ganado en deudores prime sobre lo cedido a
+            deudores prime, del A2 semana a semana (regla 77). Sin cesiones prime no hay cifra que mostrar. */}
         <KpiStat
           Icon={BarChart2}
           col="#2563EB"
-          v={`${Math.round(kpi.sowPct)}%`}
-          l="SOW Target Deudores Prime"
-          s={`${fmtMMc(kpi.ganado)} de ${fmtMMc(kpi.emitido)} cedido`}
+          v={kpi.sowPrimePct == null ? "—" : `${Math.round(kpi.sowPrimePct)}%`}
+          l="SOW deudores prime"
+          s={`${fmtMMc(kpi.ganadoPrime)} de ${fmtMMc(kpi.cedidoPrime)} cedido a deudores prime`}
         />
       </div>
       {/* Tabla drill-down (Resumen) */}
       <div className="mt-3 overflow-x-auto">
-        <table className="w-full border-collapse t11" style={{ minWidth: 880 }}>
+        <table className="w-full border-collapse t11" style={{ minWidth: 940 }}>
           <thead>
             <tr>
-              <th colSpan={6} />
+              <th colSpan={7} />
               <th
                 colSpan={3}
                 className="px-2 pb-1 text-center t10 font-bold uppercase tracking-wide"
@@ -32813,11 +32823,12 @@ function ReportePerformance({ usuario, inline, onClose }) {
               </th>
             </tr>
             <tr>
-              {[nivel, "Operac.", "Total Cedido", "Ganado", "SOW", "Tend. 4 sem", "Total", "Deudores Prime", "Factoring Target"].map((h, i) => (
+              {[nivel, "Operac.", "Total Cedido", "Ganado", "SOW", "Vs target", "Tend. 4 sem", "Total", "Deudores Prime", "Factoring Target"].map((h, i) => (
                 <th
                   key={h}
                   className={`px-2 py-2 font-semibold ${i === 0 ? "text-left" : "text-right"}`}
-                  style={{ color: C.sub, borderBottom: `1px solid ${C.line}`, borderLeft: i === 6 ? `1px solid ${C.line}` : undefined }}
+                  style={{ color: C.sub, borderBottom: `1px solid ${C.line}`, borderLeft: i === 7 ? `1px solid ${C.line}` : undefined }}
+                  title={h === "Vs target" ? `De lo cedido a Security o al factoring target (${targetNombres()}), la parte de Security` : undefined}
                 >
                   {h}
                 </th>
@@ -32882,6 +32893,13 @@ function ReportePerformance({ usuario, inline, onClose }) {
                 <td className="px-2 py-2 text-right font-semibold" style={{ color: f.sowPct >= 60 ? "#16A34A" : f.sowPct >= 35 ? "#C2410C" : "#EF4444" }}>
                   {Math.round(f.sowPct)}%
                 </td>
+                <td
+                  className="px-2 py-2 text-right"
+                  style={{ color: C.sub }}
+                  title={`Security ${fmtMMc(f.ganado)} frente a ${fmtMMc(f.perdBanco)} del factoring target (${targetNombres()})`}
+                >
+                  {f.sowTargetPct == null ? "—" : Math.round(f.sowTargetPct) + "%"}
+                </td>
                 <td className="px-2 py-2">
                   {(() => {
                     const tr = tendSow4(f.cs);
@@ -32945,7 +32963,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
             ))}
             {filasOrden.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-2 py-6 text-center t10" style={{ color: C.faint }}>
+                <td colSpan={10} className="px-2 py-6 text-center t10" style={{ color: C.faint }}>
                   Sin datos en el alcance/rango.
                 </td>
               </tr>
@@ -32971,10 +32989,10 @@ function ReportePerformance({ usuario, inline, onClose }) {
           </span>
         </div>
         <div className="mt-2 overflow-x-auto">
-          <table className="w-full border-collapse t10" style={{ minWidth: 760 }}>
+          <table className="w-full border-collapse t10" style={{ minWidth: 820 }}>
             <thead>
               <tr>
-                {["Semana", "Emitido (cedido)", "De buenos deudores", "Ganado", "Perd. bancos", "Perd. otros", "SOW"].map((h, i) => (
+                {["Semana", "Emitido (cedido)", "De buenos deudores", "Ganado", "Perd. target", "Perd. otros", "SOW", "Vs target"].map((h, i) => (
                   <th
                     key={h}
                     className={`px-2 py-1.5 font-semibold ${i === 0 ? "text-left" : "text-right"}`}
@@ -33009,13 +33027,17 @@ function ReportePerformance({ usuario, inline, onClose }) {
                   <td className="px-2 py-1.5 text-right font-semibold" style={{ color: w.sowPct >= 60 ? "#16A34A" : w.sowPct >= 35 ? "#C2410C" : "#EF4444" }}>
                     {Math.round(w.sowPct)}%
                   </td>
+                  <td className="px-2 py-1.5 text-right" style={{ color: C.sub }}>
+                    {w.sowTargetPct == null ? "—" : Math.round(w.sowTargetPct) + "%"}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
         <div className="mt-1.5 t9" style={{ color: C.faint }}>
-          Ganado = Security · Perd. target = factoring target ({targetNombres()}) · Perd. otros = resto de factorings. SOW = Ganado / Cedido.
+          Ganado = Security · Perd. target = factoring target ({targetNombres()}) · Perd. otros = resto de factorings. SOW = Ganado / Cedido. Vs target = Ganado
+          / (Ganado + Perd. target): de lo cedido a Security o al factoring target, la parte de Security. Todo sumado semana a semana del A2.
         </div>
       </div>
     </div>
@@ -33047,10 +33069,14 @@ function KpiStat({ Icon, col = "#703EFF", v, l, s }) {
 }
 // --- Sección CLIENTE: alerta NEX AI, resumen de cartera, segmentación, volumen cedido, SoW ---
 function PCcliente({ resumen, hayFiltro }) {
+  // Todo lo de abajo sale de la ventana de 8 semanas del SOW de los clientes del alcance (regla 76).
+  const sw = resumen.sowCartera,
+    se = resumen.series,
+    nSem = se.semanas.length;
   const kpis = [
     { v: resumen.total.toLocaleString("es-CL"), l: "Clientes", s: "en el alcance", Icon: User, col: "#703EFF" },
-    { v: resumen.sec.toLocaleString("es-CL"), l: "Operan con Security", s: "clientes activos", Icon: Check, col: "#16A34A" },
-    { v: resumen.comp.toLocaleString("es-CL"), l: "Solo competencia", s: "wallet no capturado", Icon: ArrowUpRight, col: "#F97316" },
+    { v: resumen.sec.toLocaleString("es-CL"), l: "Operan con Security", s: "nos ceden algo", Icon: Check, col: "#16A34A" },
+    { v: resumen.comp.toLocaleString("es-CL"), l: "Solo competencia", s: "SOW 0%: ceden sólo a otros", Icon: ArrowUpRight, col: "#F97316" },
     { v: resumen.inac.toLocaleString("es-CL"), l: "Inactivos / prospectos", s: "no operan con Security", Icon: Clock, col: "#EF4444" },
     { v: resumen.sowProm + "%", l: "SOW promedio", s: "share of wallet medio", Icon: BarChart2, col: "#2563EB" },
     { v: fmtMMc(resumen.brecha), l: "Brecha de wallet", s: "por capturar vs target", Icon: ArrowUpRight, col: "#F97316" },
@@ -33107,8 +33133,8 @@ function PCcliente({ resumen, hayFiltro }) {
                     clientes
                   </span>
                 </div>
-                <div className="t10" style={{ color: C.sub }}>
-                  {s.cedido} cedidos en el año
+                <div className="t10" style={{ color: C.sub }} title="COLOC_PROM_12M del A11: lo que estos clientes nos cedieron, en promedio mensual">
+                  {s.cedido} de colocación mensual con Security
                 </div>
                 <div className="mt-3 space-y-2">
                   <div className="flex items-center justify-between t11">
@@ -33143,21 +33169,21 @@ function PCcliente({ resumen, hayFiltro }) {
         <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
           <div>
             <div className="t13 font-bold" style={{ color: C.ink }}>
-              Volumen cedido — Mercado vs Security
+              Volumen cedido — total vs Security
             </div>
             <div className="t9" style={{ color: C.faint }}>
-              CLP mensual · 2025
+              CLP semanal · clientes del alcance · últimas {nSem} semanas
             </div>
           </div>
           <div className="mt-1 flex gap-3 t10" style={{ color: C.sub }}>
             <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#9CA3AF" }} /> Mercado
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#9CA3AF" }} /> Total cedido (todos los factoring)
             </span>
             <span className="flex items-center gap-1">
               <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#703EFF" }} /> Security
             </span>
           </div>
-          <PCarea mercado={PC_MERCADO} security={PC_SECURITY} />
+          <PCarea total={se.total} security={se.sec} semanas={se.semanas} />
         </div>
         <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
           <div className="t13 font-bold" style={{ color: C.ink }}>
@@ -33204,24 +33230,24 @@ function PCcliente({ resumen, hayFiltro }) {
             Share of Wallet
           </div>
           <div className="t9" style={{ color: C.faint }}>
-            Security vs competencia
+            Security vs competencia · lo cedido por los clientes del alcance en las últimas {nSem} semanas
           </div>
           <div className="mt-3 flex items-center gap-4">
-            <PCdonut pct={24} />
+            <PCdonut pct={sw.pct} />
             <div className="flex-1 space-y-2 t11">
               <div className="flex items-center justify-between">
                 <span style={{ color: C.sub }}>
                   <span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: "#703EFF" }} />
                   Security
                 </span>
-                <b style={{ color: C.ink }}>$616.032 MM</b>
+                <b style={{ color: C.ink }}>{fmtMMc(sw.propio)}</b>
               </div>
               <div className="flex items-center justify-between">
                 <span style={{ color: C.sub }}>
                   <span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: "#e5e7eb" }} />
                   Competencia
                 </span>
-                <b style={{ color: C.ink }}>$1,93 B</b>
+                <b style={{ color: C.ink }}>{fmtMMc(sw.ajeno)}</b>
               </div>
             </div>
           </div>
@@ -33233,15 +33259,22 @@ function PCcliente({ resumen, hayFiltro }) {
 // --- Sección SOW: desviación vs target, competidores, tendencia por zona ---
 function PCsow({ clientes = [] }) {
   const [modo, setModo] = useState("vol"); // vol | sow
-  // Desviación de SoW derivada de los clientes en el alcance (responde a los filtros).
-  const sec = clientes.filter((c) => c.estado === "Security");
+  // Todo del ALCANCE y de la ventana de 8 semanas (regla 76): la desviación es una partición de los que operan con
+  // Security, los competidores salen del A2 —nunca el tenant— y la tendencia por zona, de las series del A5.
+  const dv = useMemo(() => desviacionSow(clientes), [clientes]);
   const desviacion = [
-    { l: "Defendidos · SoW ≥ target", v: sec.filter((c) => c.sow >= c.target).length, col: "#16A34A" },
-    { l: "Brecha moderada · hasta 20 pp bajo target", v: sec.filter((c) => c.sow < c.target && c.target - c.sow <= 20).length, col: "#F97316" },
-    { l: "Brecha crítica · más de 20 pp bajo target", v: sec.filter((c) => c.target - c.sow > 20).length, col: "#EF4444" },
+    { l: "Defendidos · SoW ≥ target", v: dv.defendidos, col: "#16A34A" },
+    { l: `Brecha moderada · hasta ${BRECHA_CRITICA_PP} pp bajo target`, v: dv.moderada, col: "#F97316" },
+    { l: `Brecha crítica · más de ${BRECHA_CRITICA_PP} pp bajo target`, v: dv.critica, col: "#EF4444" },
   ];
-  const maxComp = Math.max(...PC_COMPETIDORES.map((c) => c.mm));
-  const zonaCols = { Norte: "#703EFF", Centro: "#16A34A", Sur: "#F97316" };
+  const competidores = useMemo(() => competidoresDeCartera(clientes, (typeof window !== "undefined" && window.AECSYNC) || []), [clientes]);
+  const TOPE_COMP = 8;
+  const verComp = competidores.slice(0, TOPE_COMP),
+    restoComp = competidores.slice(TOPE_COMP);
+  const maxComp = Math.max(1, ...verComp.map((c) => c.monto));
+  const se = useMemo(() => seriesCartera(clientes, ZONAS_COMERCIALES), [clientes]);
+  const PALETA_ZONA = ["#703EFF", "#16A34A", "#F97316", "#2563EB", "#C2410C"];
+  const zonaCols = Object.fromEntries(ZONAS_COMERCIALES.map((z, i) => [z, PALETA_ZONA[i % PALETA_ZONA.length]]));
   return (
     <div className="space-y-5">
       <div>
@@ -33279,25 +33312,35 @@ function PCsow({ clientes = [] }) {
             Competidores capturando cartera
           </div>
           <div className="t10" style={{ color: C.faint }}>
-            Volumen cedido a la competencia en el alcance seleccionado
+            Volumen cedido a otros factoring por los clientes del alcance · últimas {se.semanas.length} semanas (AECSync)
           </div>
           <div className="mt-3 space-y-2.5">
-            {PC_COMPETIDORES.map((c, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <span className="w-40 shrink-0 t11 font-semibold" style={{ color: C.ink }}>
-                  {c.name}
+            {verComp.map((c) => (
+              <div key={c.rut} className="flex items-center gap-3">
+                <span className="w-40 shrink-0 t11 font-semibold" style={{ color: C.ink }} title={c.rut}>
+                  {c.nombre}
                 </span>
                 <div className="h-3 flex-1 overflow-hidden rounded-full" style={{ backgroundColor: C.page }}>
                   <div
                     className="h-full rounded-full"
-                    style={{ width: Math.max(8, (c.mm / maxComp) * 100) + "%", background: "linear-gradient(90deg,#FED7AA,#FF814B)" }}
+                    style={{ width: Math.max(8, (c.monto / maxComp) * 100) + "%", background: "linear-gradient(90deg,#FED7AA,#FF814B)" }}
                   />
                 </div>
                 <span className="w-28 shrink-0 text-right t11 font-semibold" style={{ color: C.sub }}>
-                  {fmtMMc(c.mm)}
+                  {fmtMMc(c.monto)}
                 </span>
               </div>
             ))}
+            {!verComp.length && (
+              <div className="t11" style={{ color: C.faint }}>
+                Los clientes del alcance no le cedieron a otros factoring en la ventana.
+              </div>
+            )}
+            {restoComp.length > 0 && (
+              <div className="t10" style={{ color: C.faint }}>
+                y {restoComp.length} cesionario(s) más por {fmtMMc(restoComp.reduce((s, c) => s + c.monto, 0))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -33305,10 +33348,11 @@ function PCsow({ clientes = [] }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="t14 font-bold" style={{ color: C.ink }}>
-              Tendencia mensual por zona
+              Tendencia semanal por zona
             </div>
             <div className="t10" style={{ color: C.faint }}>
-              Volumen cedido a Security (CLP) · 2025
+              {modo === "sow" ? "Share of Wallet · Security / total cedido" : "Volumen cedido a Security (CLP)"} · clientes del alcance · últimas{" "}
+              {se.semanas.length} semanas
             </div>
           </div>
           <div className="flex gap-1.5">
@@ -33332,46 +33376,50 @@ function PCsow({ clientes = [] }) {
           </div>
         </div>
         <div className="mt-2 flex gap-4 t11" style={{ color: C.sub }}>
-          {Object.keys(PC_ZONA).map((z) => (
+          {ZONAS_COMERCIALES.map((z) => (
             <span key={z} className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: zonaCols[z] }} />
               {z}
             </span>
           ))}
         </div>
-        <PClineas series={PC_ZONA} cols={zonaCols} modo={modo} />
+        <PClineas semanas={se.semanas} zonas={se.porZona} cols={zonaCols} modo={modo} />
       </div>
     </div>
   );
 }
 // --- Gráficos SVG del panel ---
-function PCarea({ mercado, security }) {
+function PCarea({ total, security, semanas }) {
   const W = 640,
     H = 210,
     padL = 8,
     padR = 8,
     padT = 12,
     padB = 22,
-    n = mercado.length;
-  const max = Math.max(...mercado) * 1.05;
+    n = total.length;
+  // Sin dos semanas no hay serie que dibujar: se dice, en vez de trazar una línea de un solo punto.
+  if (n < 2)
+    return (
+      <div className="mt-2 t11" style={{ color: C.faint }}>
+        Sin cesiones de los clientes del alcance en la ventana.
+      </div>
+    );
+  const max = Math.max(1, ...total) * 1.05;
   const X = (i) => padL + (i * (W - padL - padR)) / (n - 1);
   const Y = (v) => padT + (1 - v / max) * (H - padT - padB);
   const path = (arr) => arr.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
   const area = (arr) => `${padL},${H - padB} ${path(arr)} ${W - padR},${H - padB}`;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 w-full" style={{ maxHeight: 230 }}>
-      <polygon points={area(mercado)} fill="#9CA3AF33" />
-      <polyline points={path(mercado)} fill="none" stroke="#9CA3AF" strokeWidth="2" />
+      <polygon points={area(total)} fill="#9CA3AF33" />
+      <polyline points={path(total)} fill="none" stroke="#9CA3AF" strokeWidth="2" />
       <polygon points={area(security)} fill="#703EFF33" />
       <polyline points={path(security)} fill="none" stroke="#703EFF" strokeWidth="2.5" />
-      {mercado.map(
-        (v, i) =>
-          i % 1 === 0 && (
-            <text key={i} x={X(i)} y={H - 6} textAnchor="middle" fontSize="9" fill={C.faint}>
-              {String(i + 1).padStart(2, "0")}
-            </text>
-          ),
-      )}
+      {semanas.map((s, i) => (
+        <text key={s} x={X(i)} y={H - 6} textAnchor="middle" fontSize="9" fill={C.faint}>
+          {wkLbl(s)}
+        </text>
+      ))}
     </svg>
   );
 }
@@ -33402,21 +33450,33 @@ function PCdonut({ pct }) {
     </svg>
   );
 }
-function PClineas({ series, cols, modo }) {
-  const keys = Object.keys(series);
+function PClineas({ semanas, zonas, cols, modo }) {
+  const keys = Object.keys(zonas || {});
   const W = 960,
     H = 240,
     padL = 38,
     padR = 12,
     padT = 14,
-    padB = 24;
-  const data = modo === "sow" ? Object.fromEntries(keys.map((k) => [k, series[k].map((v) => Math.round(18 + v))])) : series;
-  const all = keys.flatMap((k) => data[k]);
-  const max = Math.max(...all) * 1.1;
-  const n = data[keys[0]].length;
+    padB = 24,
+    n = (semanas || []).length;
+  if (!keys.length || n < 2)
+    return (
+      <div className="mt-2 t11" style={{ color: C.faint }}>
+        Sin cesiones de los clientes del alcance en la ventana.
+      </div>
+    );
+  // «Share of Wallet» es lo cedido a Security sobre lo cedido en total, por zona y por semana (regla 76): una semana
+  // sin cesiones queda sin punto. Antes este modo le sumaba 18 al monto en pesos y lo rotulaba como porcentaje.
+  const data = Object.fromEntries(keys.map((k) => [k, modo === "sow" ? pctSerie(zonas[k].sec, zonas[k].total) : zonas[k].sec]));
+  const all = keys.flatMap((k) => data[k]).filter((v) => v != null);
+  const max = modo === "sow" ? 100 : Math.max(1, ...all) * 1.1;
   const X = (i) => padL + (i * (W - padL - padR)) / (n - 1);
   const Y = (v) => padT + (1 - v / max) * (H - padT - padB);
-  const path = (arr) => arr.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  const path = (arr) =>
+    arr
+      .map((v, i) => (v == null ? null : `${X(i).toFixed(1)},${Y(v).toFixed(1)}`))
+      .filter(Boolean)
+      .join(" ");
   const ticks = 4;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 w-full" style={{ maxHeight: 260 }}>
@@ -33435,10 +33495,10 @@ function PClineas({ series, cols, modo }) {
       {keys.map((k) => (
         <polyline key={k} points={path(data[k])} fill="none" stroke={cols[k]} strokeWidth="2.5" />
       ))}
-      {keys.map((k) => data[k].map((v, i) => <circle key={k + i} cx={X(i)} cy={Y(v)} r="2.5" fill={cols[k]} />))}
-      {data[keys[0]].map((_, i) => (
-        <text key={i} x={X(i)} y={H - 6} textAnchor="middle" fontSize="8" fill={C.faint}>
-          {String(i + 1).padStart(2, "0")}
+      {keys.map((k) => data[k].map((v, i) => (v == null ? null : <circle key={k + i} cx={X(i)} cy={Y(v)} r="2.5" fill={cols[k]} />)))}
+      {semanas.map((s, i) => (
+        <text key={s} x={X(i)} y={H - 6} textAnchor="middle" fontSize="8" fill={C.faint}>
+          {wkLbl(s)}
         </text>
       ))}
     </svg>
@@ -33453,7 +33513,124 @@ function pcRng(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-// Cartera sintética determinista de clientes (para Clientes prioritarios y Plan de retención).
+// ── LA CARTERA MEDIDA (regla 76) ─────────────────────────────────────────────────────────────────
+// Reportes › Cliente y SOW leen de acá, y todo sale de la VENTANA del SOW de cada cliente: las últimas 8 semanas de la
+// serie del A5, que es el A2 semana a semana (regla 13-undecies). Es la misma ventana del churn —una mala semana no
+// define la relación— y por eso las dos pantallas cuentan igual. Hasta el 23-09-2026 esta pestaña traía un donut escrito
+// a mano, series fijas de 2025 y una lista de «competidores» con el tenant adentro.
+// El lunes (UTC) de la semana de una fecha ISO: la cuenta con que el generador arma las semanas del A5 (`lunesDe`, en
+// GeneradorDatos/datasets/share_of_wallet.js). En UTC y no en hora local: en un huso al este de Greenwich la medianoche
+// local cae el día anterior y una cesión saltaría de semana.
+function lunesISO(fecha) {
+  const t = Date.parse(String(fecha || "").slice(0, 10) + "T00:00:00Z");
+  if (isNaN(t)) return "";
+  return new Date(t - ((new Date(t).getUTCDay() + 6) % 7) * 86400000).toISOString().slice(0, 10);
+}
+// La ventana de UN cliente: su serie semanal (lo cedido a Security y a todos, en pesos) y las dos sumas.
+function ventanaSow(sw) {
+  const serie = ((sw && sw.HistoricoSemanal) || [])
+    .slice(-8)
+    .map((w) => ({ sem: w.Semana, sec: Math.round(+w.MontoBICE || 0), total: Math.round(+w.MontoTotal || 0) }));
+  let sec = 0,
+    total = 0;
+  for (const w of serie) {
+    sec += w.sec;
+    total += w.total;
+  }
+  return { serie, sec, total };
+}
+// El ESTADO del cliente en la cartera se MIDE en esa ventana. «Solo competencia» es el que cede y no nos cede nada: SOW 0,
+// el «sólo otros» del churn (regla 16) y el «0% con nosotros» del pricing (`sowEstado`, regla 9). El que nos cede algo
+// opera con Security aunque venga cayendo o esté lejos de la meta: eso es su BRECHA, no otro estado. Antes el estado
+// mandaba a «Competencia» a todo el que cayera o estuviera 10 pp bajo la meta, y por eso la «Brecha crítica» (más de 20
+// pp) no podía tener a nadie. Sin ficha en el A5, o sin cesiones en la ventana, no opera: Inactivo.
+function estadoCartera(sw) {
+  const v = ventanaSow(sw);
+  if (!sw || v.total <= 0) return { estado: "Inactivo", tag: null };
+  if (v.sec <= 0) return { estado: "Competencia", tag: "FUGA" };
+  return { estado: "Security", tag: Math.round(+sw.SOWActualPct || 0) < Math.round(+sw.SOWTargetPct || 60) ? "CAÍDA" : null };
+}
+// ¿Le cede algo a otro factoring en la ventana? Es «Operan con otros»: la card del Dashboard lo cuenta con el churn
+// (sólo otros + compartidas) y el filtro de Clientes con esto, sobre la misma ventana.
+const cedeAOtros = (c) => !!c && (c.cedidoTotal || 0) - (c.cedidoSecurity || 0) > 0;
+// El segmento SOW del filtro de Reportes: en o sobre la meta es «target»; bajo ella manda la TENDENCIA del A5 —el que cae
+// está «bajando» aunque todavía nos ceda algo—, y el que no nos cede nada también baja.
+function segmentoSowCartera(c) {
+  if (!c || c.estado === "Inactivo") return "nuevo";
+  if ((c.sow || 0) >= (c.target || 0)) return "target";
+  if (c.estado === "Competencia" || /decrec|baj/i.test(c.tendencia || "")) return "bajando";
+  return "creciendo";
+}
+// El corte que parte la brecha contra la meta en «moderada» y «crítica», en puntos. Es de PANTALLA —no decide nada— y
+// tiene nombre para que el rótulo y la cuenta no digan dos números distintos.
+const BRECHA_CRITICA_PP = 20;
+// La desviación contra la meta es una PARTICIÓN de los que operan con Security: defendidos (en o sobre la meta), brecha
+// moderada (hasta 20 pp bajo) y crítica (más de 20). Los tres suman, siempre, los que operan con Security.
+function desviacionSow(clientes) {
+  const sec = (clientes || []).filter((c) => c && c.estado === "Security");
+  const brecha = (c) => (c.target || 0) - (c.sow || 0);
+  return {
+    total: sec.length,
+    defendidos: sec.filter((c) => brecha(c) <= 0).length,
+    moderada: sec.filter((c) => brecha(c) > 0 && brecha(c) <= BRECHA_CRITICA_PP).length,
+    critica: sec.filter((c) => brecha(c) > BRECHA_CRITICA_PP).length,
+  };
+}
+// El SOW del ALCANCE, en plata: lo que sus clientes le cedieron a Security y a todos en la ventana. Es lo que dibuja el
+// donut y se mueve con los filtros; el 24% escrito a mano no se movía con nada.
+function sowDeCartera(clientes) {
+  let propio = 0,
+    total = 0;
+  for (const c of clientes || []) {
+    propio += (c && c.cedidoSecurity) || 0;
+    total += (c && c.cedidoTotal) || 0;
+  }
+  return { propio, ajeno: total - propio, total, pct: total > 0 ? Math.round((propio / total) * 100) : 0 };
+}
+// Las series semanales del alcance, en total y por zona. El eje son las semanas que la ventana trae —comunes a todos los
+// clientes, con las semanas sin cesiones en 0 (regla 13-undecies)— y cada zona suma a sus clientes.
+function seriesCartera(clientes, zonas) {
+  const semanas = [...new Set((clientes || []).flatMap((c) => ((c && c.serie) || []).map((w) => w.sem)))].sort();
+  const ix = new Map(semanas.map((s, i) => [s, i]));
+  const cero = () => semanas.map(() => 0);
+  const sec = cero(),
+    total = cero();
+  const porZona = Object.fromEntries((zonas || []).map((z) => [z, { sec: cero(), total: cero() }]));
+  for (const c of clientes || [])
+    for (const w of (c && c.serie) || []) {
+      const i = ix.get(w.sem);
+      sec[i] += w.sec;
+      total[i] += w.total;
+      const z = porZona[c.zona];
+      if (z) {
+        z.sec[i] += w.sec;
+        z.total[i] += w.total;
+      }
+    }
+  return { semanas, sec, total, porZona };
+}
+// El SOW semana a semana: Security / total cedido, en %. Una semana sin cesiones no tiene SOW (`null`) y no un cero: «no
+// cedió nada» y «no nos cedió nada» son dos cosas distintas.
+const pctSerie = (sec, total) => (sec || []).map((s, i) => (total[i] > 0 ? (s / total[i]) * 100 : null));
+// A quién se le va la cartera del alcance: lo que el A2 registra cedido a cada cesionario en las semanas de la ventana de
+// cada cliente, de mayor a menor. El nombre es el del padrón (regla 16) y el tenant nunca está —lo marca `nuestro` en el
+// padrón—: la lista fija que había ponía a BICE entre los competidores. Suma, exacta, lo que el alcance cedió a otros.
+function competidoresDeCartera(clientes, a2) {
+  const semanas = new Map();
+  for (const c of clientes || []) if (c && c.serie && c.serie.length) semanas.set(c.rut, new Set(c.serie.map((w) => w.sem)));
+  const por = new Map();
+  for (const a of a2 || []) {
+    const sems = a && semanas.get(a.RUTCedente);
+    if (!sems || !a.RUTFactoring || !sems.has(lunesISO(a.FechaCesion))) continue;
+    const ces = cesionarioDe(a.RUTFactoring);
+    if (a.RUTFactoring === BICE_RUT || (ces && ces.nuestro)) continue;
+    const g = por.get(a.RUTFactoring) || { rut: a.RUTFactoring, nombre: (ces && ces.nombre) || a.RazonSocialFactoring || a.RUTFactoring, monto: 0 };
+    g.monto += Math.round(+a.MontoCesion || 0);
+    por.set(a.RUTFactoring, g);
+  }
+  return [...por.values()].sort((x, y) => y.monto - x.monto);
+}
+// Cartera de clientes, LEÍDA de los activos (regla 62): Reportes, Clientes, Tareas y el Plan de retención.
 const PC_CLIENTES = (() => {
   // CARTERA = MAESTRO. El universo de empresas es el mismo que alimenta el pipeline: los emisores
   // distintos de DTESync. Cada empresa se asigna a su ejecutivo con la MISMA regla que el pipeline
@@ -33479,20 +33656,10 @@ const PC_CLIENTES = (() => {
       const s = SOW_POR_RUT[rut] || null; // SOW real si es cliente; null si prospecto
       const act = s ? Math.round(s.SOWActualPct || 0) : 0;
       const tgt = s ? Math.round(s.SOWTargetPct || 60) : 60;
-      const tend = s ? String(s.SOWTendencia || "").toLowerCase() : "";
-      let estado,
-        tag = null;
-      if (!s || tend.includes("nuevo")) {
-        estado = "Inactivo";
-      } // prospecto / SOW nuevo → chip "nuevo"
-      else if (tend.includes("baj") || act < tgt - 10) {
-        estado = "Competencia";
-        tag = "FUGA";
-      } // fuga a la competencia → "bajando"
-      else {
-        estado = "Security";
-        tag = act < tgt ? "CAÍDA" : null;
-      } // cliente sano / en caída leve
+      // EL ESTADO SE MIDE en la ventana del SOW (regla 76): «Solo competencia» es SOW 0, el mismo conjunto que el churn
+      // llama «sólo otros». La ventana queda en la fila porque de ella salen el donut, las series y los competidores.
+      const { estado, tag } = estadoCartera(s);
+      const v = ventanaSow(s);
       // LOS CUATRO SE LEEN, NO SE SORTEAN (regla 62). Se sorteaban con `pcRng`, y el `vol` además
       // salía en una escala que no declaraba nadie —5.000 a 65.000— mientras cuatro KPI de esta misma
       // pantalla lo pasaban por `fmtMMc`, que divide por un millón: «Brecha de wallet» mostraba M$5.
@@ -33534,6 +33701,10 @@ const PC_CLIENTES = (() => {
         malosPct,
         sow: act,
         target: tgt,
+        tendencia: s ? s.SOWTendencia || null : null,
+        cedidoSecurity: v.sec,
+        cedidoTotal: v.total,
+        serie: v.serie,
         vaA,
       });
     }
@@ -33678,17 +33849,11 @@ function ClientesView({ soloExec, sel }) {
   }, [sel]);
   if (editar) return <EmpresaEditor empresa={editar} soloExec={soloExec} onBack={() => setEditar(null)} />;
   const base = soloExec ? PC_EMPRESAS.filter((e) => e.ej === soloExec) : PC_EMPRESAS;
-  // «competencia» = las que ceden a otros factorings (card «Operan con otros» del Dashboard).
+  // «competencia» = las que ceden a otros factorings en la ventana del SOW: el MISMO conjunto que la card «Operan con
+  // otros» del Dashboard cuenta con el churn (sólo otros + compartidas). Contaba `estado === "Competencia"`, que desde la
+  // regla 76 es sólo el SOW 0 —y antes era otra cosa todavía—.
   const pasaEstado = (e) =>
-    fEstado === "todos"
-      ? true
-      : fEstado === "activa"
-        ? e.activa
-        : fEstado === "inactiva"
-          ? !e.activa
-          : fEstado === "competencia"
-            ? e.estado === "Competencia"
-            : true;
+    fEstado === "todos" ? true : fEstado === "activa" ? e.activa : fEstado === "inactiva" ? !e.activa : fEstado === "competencia" ? cedeAOtros(e) : true;
   const rows = base
     .filter(
       (e) =>
@@ -50727,34 +50892,42 @@ export default function PipelineComercial() {
       acc[k].fac += d.facturas || 0;
       acc[k].mm += d.monto || 0;
     };
-    // IMPORTANTE: la decisión aleatoria y el conteo del embudo se hacen UNA vez aquí (función pura sobre el
+    // IMPORTANTE: la decisión y el conteo del embudo se hacen UNA vez aquí (función pura sobre el
     // snapshot actual), NO dentro del updater de setDeals — React puede invocar el updater más de una vez
     // (StrictMode), lo que con Math.random() adentro descuadraba el contador del chart vs. la lista real.
     const patches = {};
     for (const d of dealsRef.current || []) {
       if (["perdida", "giro", "otorgamiento"].includes(d.stage)) continue; // terminales / en mesa de crédito
-      // (1) Cesión a otro factoring (AECSync): si el cedente tiene una cesión registrada a la competencia,
-      // hay ~12% de perder la operación. Se evalúa una sola vez por oportunidad.
+      // (1) Cesión de las facturas de la OFERTA a otro factoring (AECSync, regla 78): un hecho del registro, no un sorteo.
+      // Se pierde entera sólo si otro factoring se llevó TODAS; una parte queda anotada y la oferta sigue con el resto.
+      // Hasta el 23-09-2026 era `rndDetBool(aec|id, 0.12)` sobre cualquier cedente que alguna vez cedió afuera. Una sola
+      // vez por oportunidad.
       if (["prospeccion", "oferta", "aceptadas"].includes(d.stage) && !d.cesionEval) {
-        const comp = d.cedidaCompetidor || (d.rutEmisor ? aecCompetidorDe(d) : competidorDe(d));
-        if (comp && rndDetBool(`aec|${d.id}`, 0.12)) {
+        const dec = perdidaPorCesion(d);
+        if (dec.pierde) {
           sumar("perdida", d);
           e.perdida++;
+          const folios = dec.folios.slice(0, 6).join(", ") + (dec.folios.length > 6 ? "…" : "");
           patches[d.id] = {
             stage: "perdida",
             etapaPerdida: d.stage,
             perdidaPor: "sistema",
             fechaPerdida: nowStamp(),
             cesionEval: true,
-            status: `Perdido · facturas financiadas por ${comp}`,
-            cedidaCompetidor: comp,
+            status: `Perdido · facturas financiadas por ${dec.factoring}`,
+            cedidaCompetidor: dec.factoring,
+            cedidasOtro: dec.n,
             perdidaCesion: true,
             time: nowStamp(),
-            historialContacto: traza(d, `AECSync: las facturas fueron financiadas por ${comp}. Oportunidad perdida ante la competencia.`, false),
+            historialContacto: traza(
+              d,
+              `AECSync: las ${dec.n} factura(s) de la oferta fueron financiadas por ${dec.factoring} (folios ${folios}). Oportunidad perdida ante la competencia.`,
+              false,
+            ),
           };
           continue;
         }
-        patches[d.id] = { cesionEval: true };
+        patches[d.id] = { cesionEval: true, cedidasOtro: dec.n, cedidaCompetidor: dec.n > 0 ? dec.factoring : d.cedidaCompetidor };
       }
       // (2) El cliente no acepta la oferta: una sola vez en Oferta, para las marcadas como perdedoras.
       // Se respetan los casos que esperan acción humana: manual (con N° de negocio), demo y escalados.

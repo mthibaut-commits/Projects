@@ -8545,12 +8545,262 @@
        + ` · VER-01 ${ver01Ok}${ver01Err ? " (" + ver01Err + ")" : ""} · candidata «${cand.label}» ${candOk} · aviso «${avisoDet}» ${avisoOk} · asunto de la llamada intacto ${asuntoOk}`);
   }
 
-  // 172 · EL CATÁLOGO DE TRANSICIONES MANUALES (regla 80, G-25). `moverEtapa` tenía guardas —perdida
+  {
+    // 172 · REPORTES › CLIENTE Y SOW LEEN LA CARTERA MEDIDA (regla 76; revisión de Reportes del 23-09-2026). El donut era
+    //       un 24% escrito a mano, las series eran de 2025 y el toggle «Share of Wallet» sumaba 18 a un monto en pesos, los
+    //       competidores eran ocho filas fijas con BICE —el tenant— adentro, «Solo competencia» contaba a los que caen o
+    //       están 10 pp bajo la meta, y por eso la «Brecha crítica» (más de 20 pp) no podía tener a nadie: el que estaba así
+    //       de lejos ya no era «Security». Lo que fija por nombre: (a) `estadoCartera` mide la ventana de 8 semanas —sin ficha
+    //       o sin cesiones es Inactivo, sólo a otros es Competencia (FUGA), con algo a Security es Security aunque caiga o
+    //       esté lejos de la meta, y lo cedido fuera de la ventana no cuenta—; (b) sobre el activo, «Solo competencia» es el
+    //       MISMO conjunto que «Sólo con otros» del churn y que el SOW 0 del A5, en las dos direcciones; (c) la desviación es
+    //       una partición de los que operan con Security (20 pp es moderada, 21 crítica) y en el activo la crítica tiene
+    //       gente; (d) el donut es la plata de la ventana del alcance y cambia con el alcance; (e) las series son las semanas
+    //       del A5, las zonas reparten el total y el SOW semanal es un porcentaje; (f) los competidores salen del A2 y del
+    //       padrón, nunca somos nosotros y suman exactamente lo cedido a otros; (g) el segmento SOW mira la tendencia bajo la
+    //       meta; (h) «Operan con otros» de Clientes es el mismo conjunto que el churn cuenta en el Dashboard.
+    let pasa = false, det = "";
+    try {
+      const sem = (i) => diaISO("2026-05-04", 7 * i);
+      const ficha = (rut, sec, tot, extra) => ({ RUTCliente: rut, SOWActualPct: 0, SOWTargetPct: 60, SOWTendencia: "Manteniendo",
+        HistoricoSemanal: sec.map((b, i) => ({ Semana: sem(i), MontoBICE: b, MontoTotal: tot[i], NumCesiones: tot[i] ? 1 : 0 })), ...extra });
+      const ocho = (v) => Array(8).fill(v);
+      // (a) El estado se MIDE en la ventana.
+      const eNull = estadoCartera(null), eVacio = estadoCartera(ficha("172-1", ocho(0), ocho(0)));
+      const eSolo = estadoCartera(ficha("172-2", ocho(0), ocho(1000000)));
+      const eBaja = estadoCartera(ficha("172-3", ocho(450000), ocho(1000000), { SOWActualPct: 45, SOWTendencia: "Decreciente" }));
+      const eLejos = estadoCartera(ficha("172-4", ocho(350000), ocho(1000000), { SOWActualPct: 35 }));
+      const eSobre = estadoCartera(ficha("172-5", ocho(700000), ocho(1000000), { SOWActualPct: 70 }));
+      const eFuera = estadoCartera(ficha("172-6", [900000, ...ocho(0)], Array(9).fill(1000000))); // lo nuestro fue en la semana 1 de 9
+      const estadoOk = eNull.estado === "Inactivo" && eVacio.estado === "Inactivo" && eSolo.estado === "Competencia" && eSolo.tag === "FUGA"
+        && eBaja.estado === "Security" && eBaja.tag === "CAÍDA" && eLejos.estado === "Security" && eLejos.tag === "CAÍDA"
+        && eSobre.estado === "Security" && eSobre.tag === null && eFuera.estado === "Competencia";
+      // (b) El activo: «Solo competencia» ≡ «Sólo con otros» del churn ≡ SOW 0 del A5.
+      const SW = window.SHARE_OF_WALLET || [];
+      const igual = (x, y) => x.size === y.size && [...x].every((r) => y.has(r));
+      const A = new Set(PC_CLIENTES.filter((c) => c.estado === "Competencia").map((c) => c.rut));
+      const B = new Set(churnCartera(null).filter((x) => x.segmento === "soloOtros").map((x) => x.rut));
+      const C0 = new Set(SW.filter((s) => +s.SOWActualPct === 0).map((s) => s.RUTCliente));
+      const soloOk = A.size > 0 && igual(A, B) && igual(A, C0);
+      const plataOk = PC_CLIENTES.every((c) => c.estado !== "Security" || c.cedidoSecurity > 0)
+        && PC_CLIENTES.every((c) => c.estado !== "Competencia" || (c.cedidoSecurity === 0 && c.cedidoTotal > 0));
+      // (c) La desviación: partición de los que operan con Security, con el corte en 20 pp.
+      const dv = desviacionSow([{ estado: "Security", sow: 30, target: 60 }, { estado: "Security", sow: 40, target: 60 }, { estado: "Security", sow: 39, target: 60 },
+        { estado: "Security", sow: 70, target: 60 }, { estado: "Competencia", sow: 0, target: 60 }]);
+      const dvOk = dv.total === 4 && dv.defendidos === 1 && dv.moderada === 1 && dv.critica === 2;
+      const nSec = PC_CLIENTES.filter((c) => c.estado === "Security").length, dA = desviacionSow(PC_CLIENTES);
+      const dAOk = dA.total === nSec && dA.defendidos + dA.moderada + dA.critica === nSec && dA.critica > 0;
+      // (d) El donut: la plata de la ventana del alcance.
+      let prop = 0, tot = 0;
+      for (const s of SW) for (const w of (s.HistoricoSemanal || []).slice(-8)) { prop += Math.round(+w.MontoBICE || 0); tot += Math.round(+w.MontoTotal || 0); }
+      const sw = sowDeCartera(PC_CLIENTES);
+      const ej = (PC_CLIENTES.find((c) => c.estado === "Security") || {}).ej;
+      const deEj = PC_CLIENTES.filter((c) => c.ej === ej), swEj = sowDeCartera(deEj);
+      const donutOk = sw.propio === prop && sw.total === tot && sw.ajeno === tot - prop && sw.pct === Math.round((prop / tot) * 100) && swEj.total > 0 && swEj.total < sw.total;
+      // (e) Las series: las semanas del A5, las zonas reparten el total, el SOW semanal es un porcentaje.
+      const se = seriesCartera(PC_CLIENTES, ZONAS_COMERCIALES);
+      const suma = (a) => a.reduce((x, y) => x + y, 0);
+      const ejeA5 = [...new Set(SW.flatMap((s) => (s.HistoricoSemanal || []).slice(-8).map((w) => w.Semana)))].sort();
+      const zonasOk = se.semanas.every((_, i) => suma(ZONAS_COMERCIALES.map((z) => se.porZona[z].sec[i])) === se.sec[i] && suma(ZONAS_COMERCIALES.map((z) => se.porZona[z].total[i])) === se.total[i]);
+      const pcts = ZONAS_COMERCIALES.flatMap((z) => pctSerie(se.porZona[z].sec, se.porZona[z].total)).filter((p) => p != null);
+      const seriesOk = se.semanas.length === 8 && se.semanas.join() === ejeA5.join() && suma(se.sec) === sw.propio && suma(se.total) === sw.total && zonasOk
+        && pcts.length > 0 && pcts.every((p) => p >= 0 && p <= 100) && pctSerie([0, 5], [0, 10]).join() === ",50";
+      // (f) Los competidores: del A2 y del padrón, nunca nosotros, y suman lo cedido a otros en la ventana.
+      const comp = competidoresDeCartera(PC_CLIENTES, window.AECSYNC || []), compEj = competidoresDeCartera(deEj, window.AECSYNC || []);
+      const compOk = comp.length > 0 && comp.every((x) => x.rut !== BICE_RUT && !(cesionarioDe(x.rut) || {}).nuestro && x.nombre === ((cesionarioDe(x.rut) || {}).nombre || x.nombre))
+        && !comp.some((x) => /BICE|Security/i.test(x.nombre)) && comp.every((x, i) => i === 0 || comp[i - 1].monto >= x.monto)
+        && suma(comp.map((x) => x.monto)) === sw.ajeno && suma(compEj.map((x) => x.monto)) === swEj.ajeno;
+      // (g) El segmento SOW del filtro: sobre la meta es «target»; bajo ella manda la tendencia.
+      const seg = segmentoSowCartera;
+      const segOk = seg({ estado: "Inactivo" }) === "nuevo" && seg({ estado: "Competencia", sow: 0, target: 60 }) === "bajando"
+        && seg({ estado: "Security", sow: 70, target: 60, tendencia: "Decreciente" }) === "target" && seg({ estado: "Security", sow: 45, target: 60, tendencia: "Decreciente" }) === "bajando"
+        && seg({ estado: "Security", sow: 45, target: 60, tendencia: "Creciendo" }) === "creciendo";
+      // (h) «Operan con otros» de Clientes: el mismo conjunto que el churn cuenta en el Dashboard.
+      const otrosOk = igual(new Set(PC_CLIENTES.filter(cedeAOtros).map((c) => c.rut)), new Set(churnCartera(null).map((x) => x.rut)));
+      pasa = estadoOk && soloOk && plataOk && dvOk && dAOk && donutOk && seriesOk && compOk && segOk && otrosOk;
+      det = `estado medido ${estadoOk} · «Solo competencia» ${A.size} = churn ${B.size} = SOW 0 ${C0.size} ${soloOk} · plata ${plataOk} · desviación ${dvOk} (activo: ${dA.defendidos}/${dA.moderada}/${dA.critica} de ${nSec}) ${dAOk}`
+        + ` · donut ${sw.pct}% (${ej}: ${swEj.pct}%) ${donutOk} · series ${se.semanas.length} semanas ${seriesOk} · competidores ${comp.length} (${comp.slice(0, 3).map((x) => x.nombre).join(", ")}) ${compOk}`
+        + ` · segmento ${segOk} · «Operan con otros» ${otrosOk}`;
+    } catch (e) { det = "error: " + String((e && e.message) || e).slice(0, 160); }
+    ok("172 Reportes › Cliente y SOW leen la cartera medida: el estado sale de la ventana del A5 («Solo competencia» es SOW 0, el mismo conjunto que «Sólo con otros» del churn), la desviación contra la meta es una partición con la brecha crítica medida, y el donut, las series por zona y los competidores salen del A5/A2 del alcance, sin el tenant",
+       pasa, det);
+  }
+
+  {
+    // 173 · LAS CIFRAS DE OPERACIÓN DE REPORTES Y DEL DASHBOARD SE SUMAN SEMANA A SEMANA DEL A1 Y DEL A2 (regla 77). Lo
+    //       facturado salía de `cedido / (0,50 + hash(RUT) % 30 / 100)` en dos sitios —una razón inventada por cliente—, el
+    //       KPI «SOW Target Deudores Prime» de Performance comercial mostraba el SOW general, y la participación propia
+    //       frente al factoring target (`sowTargetPct`) se calculaba y ninguna pantalla la leía. Lo que fija: (a) `sumarSemanas`
+    //       es pura y suma por semana con los bordes incluidos, y el target lo decide el predicado del tenant; (b) los índices
+    //       no pierden un peso: el A1 entero y el A2 del A5 semana a semana; (c) la fila de cada cliente factura lo que el A1
+    //       trae —y con eso la razón inventada queda fuera para la mayoría— y suma prime y target del A2; (d) `sumarFilas` da
+    //       el SOW prime, que no es el general, y la participación frente al target; (e) el Dashboard usa la misma suma para
+    //       el mes en curso.
+    let pasa = false, det = "";
+    try {
+      // (a) La suma pura.
+      const sem = (s, o) => [s, { total: 0, sec: 0, prime: 0, primeSec: 0, porCes: new Map(), ...o }];
+      const ces = new Map([
+        sem("2026-05-04", { total: 100, sec: 60, prime: 80, primeSec: 50, porCes: new Map([["T1", { monto: 30, prime: 20 }], ["O1", { monto: 10, prime: 10 }]]) }),
+        sem("2026-05-11", { total: 200, sec: 100, prime: 150, primeSec: 90, porCes: new Map([["T1", { monto: 60, prime: 40 }], ["O1", { monto: 40, prime: 20 }]]) }),
+        sem("2026-05-18", { total: 999, sec: 999, prime: 999, primeSec: 999, porCes: new Map([["T1", { monto: 999, prime: 999 }]]) }),
+      ]);
+      const emi = new Map([["2026-05-04", { emitido: 500, emitidoPrime: 400 }], ["2026-05-11", { emitido: 700, emitidoPrime: 300 }], ["2026-05-18", { emitido: 9999, emitidoPrime: 9999 }]]);
+      const x = sumarSemanas(ces, emi, "2026-05-04", "2026-05-11", (r) => r === "T1");
+      const sumaOk = x.cedido === 300 && x.ganado === 160 && x.aTarget === 90 && x.cedidoPrime === 230 && x.ganadoPrime === 140 && x.aTargetPrime === 60 && x.facturado === 1200 && x.facturadoPrime === 700;
+      const sinT = sumarSemanas(ces, emi, "2026-05-04", "2026-05-11", () => false), vac = sumarSemanas(undefined, undefined, "2026-05-04", "2026-05-11", () => true);
+      const bordesOk = sinT.aTarget === 0 && sinT.cedido === 300 && vac.cedido === 0 && vac.facturado === 0 && sumarSemanas(ces, emi, "2026-05-18", "2026-05-18", () => false).cedido === 999;
+      // (b) Los índices no pierden un peso.
+      const ix = indicesCartera(), SW = window.SHARE_OF_WALLET || [];
+      let emiIx = 0, emiA1 = 0, descuadres = 0;
+      for (const m of ix.emi.values()) for (const v of m.values()) emiIx += v.emitido;
+      for (const d of documentosDTE()) emiA1 += Math.round(+d.MntTotal || 0);
+      for (const s of SW) for (const h of s.HistoricoSemanal || []) {
+        const v = (ix.ces.get(s.RUTCliente) || new Map()).get(h.Semana);
+        if ((v ? v.total : 0) !== Math.round(+h.MontoTotal || 0) || (v ? v.sec : 0) !== Math.round(+h.MontoBICE || 0)) descuadres++;
+      }
+      const ixOk = emiIx > 0 && emiIx === emiA1 && descuadres === 0;
+      // (c) La fila de cada cliente, contra un recuento directo del A1 y del A2.
+      const semanas = [...new Set(SW.flatMap((s) => (s.HistoricoSemanal || []).map((h) => h.Semana)))].sort();
+      const desde = semanas[0], hasta = semanas[semanas.length - 1];
+      const docsPor = new Map();
+      for (const d of documentosDTE()) { const l = docsPor.get(d.RUTEmisor) || []; l.push(d); docsPor.set(d.RUTEmisor, l); }
+      const esPrime = (rut, nom) => { const t = tipoDeudor(rut, nom); return t === "Lista Blanca" || t === "Deudor Autorizado"; };
+      const a2Por = new Map();
+      for (const a of window.AECSYNC || []) { const l = a2Por.get(a.RUTCedente) || []; l.push(a); a2Por.set(a.RUTCedente, l); }
+      let filasMal = 0, fueraRazon = 0, conCesion = 0;
+      const filas = SW.map((s) => {
+        const f = filaCartera(s, desde, hasta, ix);
+        let fac = 0, facP = 0, cP = 0, gP = 0, aT = 0;
+        for (const d of docsPor.get(s.RUTCliente) || []) { const w = lunesISO(d.FchEmis); if (w < desde || w > hasta) continue; const m = Math.round(+d.MntTotal || 0); fac += m; if (esPrime(d.RUTRecep, d.RznSocRecep)) facP += m; }
+        for (const a of a2Por.get(s.RUTCliente) || []) {
+          const w = lunesISO(a.FechaCesion); if (w < desde || w > hasta) continue;
+          const m = Math.round(+a.MontoCesion || 0), p = esPrime(a.RUTReceptor, a.RazonSocialReceptor), t = esFactoringTarget(a.RUTFactoring);
+          if (p) { cP += m; if (a.RUTFactoring === BICE_RUT) gP += m; }
+          if (t) aT += m;
+        }
+        if (f.facturado !== fac || f.facturadoPrime !== facP || f.cedidoPrime !== cP || f.ganadoPrime !== gP || f.aTarget !== aT) filasMal++;
+        if (f.cedido > 0) { conCesion++; const r = f.facturado > 0 ? f.cedido / f.facturado : Infinity; if (!(r >= 0.5 && r <= 0.79)) fueraRazon++; }
+        return f;
+      });
+      const filaOk = filasMal === 0 && conCesion > 0 && fueraRazon > conCesion / 4;
+      // (d) El agregado: el SOW prime no es el general y la participación frente al target se calcula.
+      const agP = sumarFilas([{ cedido: 100, ganado: 60, aTarget: 20, cedidoPrime: 50, ganadoPrime: 40, aTargetPrime: 5, facturado: 400, facturadoPrime: 300 }]);
+      const agOk = Math.round(agP.sowPct) === 60 && Math.round(agP.sowPrimePct) === 80 && Math.round(agP.sowTargetPct) === 75 && Math.round(agP.targetPrimePct) === 10
+        && sumarFilas([]).sowPrimePct === null && sumarFilas([]).sowTargetPct === null;
+      const agA = sumarFilas(filas);
+      let cPT = 0, gPT = 0;
+      for (const a of window.AECSYNC || []) if (SOW_POR_RUT[a.RUTCedente] && esPrime(a.RUTReceptor, a.RazonSocialReceptor)) { const m = Math.round(+a.MontoCesion || 0); cPT += m; if (a.RUTFactoring === BICE_RUT) gPT += m; }
+      const primeOk = agA.cedidoPrime === cPT && Math.abs(agA.sowPrimePct - (gPT / cPT) * 100) < 1e-9 && Math.abs(agA.sowPrimePct - agA.sowPct) > 0.01
+        && agA.sowTargetPct > 0 && agA.sowTargetPct <= 100 && Math.abs(agA.sowTargetPct - (agA.ganado / (agA.ganado + agA.aTarget)) * 100) < 1e-9;
+      // (e) El Dashboard: la misma suma, sobre el mes en curso.
+      const semMax = semanas[semanas.length - 1], mesIni = semMax.slice(0, 8) + "01";
+      const k = dashboardKPIs("ADMIN", []);
+      const mes = sumarFilas(SW.filter((s) => EXEC_INI_POR_NOMBRE[s.Ejecutivo]).map((s) => filaCartera(s, mesIni, semMax, ix)));
+      const dashOk = !!k && Math.round(k.operaciones.facturado) === Math.round(mes.facturado) && Math.round(k.operaciones.perdBanco) === Math.round(mes.aTarget)
+        && k.operaciones.sowTargetPct != null && Math.abs(k.operaciones.sowTargetPct - mes.sowTargetPct) < 1e-9 && Math.abs(k.sowPrimePct - mes.sowPrimePct) < 1e-9;
+      pasa = sumaOk && bordesOk && ixOk && filaOk && agOk && primeOk && dashOk;
+      det = `suma pura ${sumaOk} · bordes ${bordesOk} · índices (A1 ${emiA1.toLocaleString("es-CL")} = ${emiIx.toLocaleString("es-CL")}, ${descuadres} semanas descuadradas) ${ixOk}`
+        + ` · filas ${SW.length - filasMal}/${SW.length} contra el recuento, ${fueraRazon}/${conCesion} fuera de la razón inventada ${filaOk} · agregado ${agOk}`
+        + ` · SOW ${agA.sowPct == null ? "—" : agA.sowPct.toFixed(2)}% vs prime ${agA.sowPrimePct == null ? "—" : agA.sowPrimePct.toFixed(2)}% · frente al target ${agA.sowTargetPct == null ? "—" : agA.sowTargetPct.toFixed(1)}% ${primeOk} · Dashboard ${dashOk}`;
+    } catch (e) { det = "error: " + String((e && e.message) || e).slice(0, 160); }
+    ok("173 las cifras de operación de Reportes y del Dashboard se suman semana a semana: lo facturado sale del A1 y no de una razón inventada, el SOW de deudores prime y lo cedido al factoring target salen del A2, y la participación propia frente al target se calcula con la misma suma en las dos pantallas",
+       pasa, det);
+  }
+
+  {
+    // 174 · LA PÉRDIDA POR CESIÓN A LA COMPETENCIA ES UN HECHO DEL A2 (regla 78, ADR-0023). `evaluarPerdidas` —lo único que
+    //       el cron corre— perdía el 12% de las oportunidades de un cedente que alguna vez cedió afuera con
+    //       `rndDetBool(aec|id, 0.12)`, sin mirar sus facturas; la versión que sí las miraba vivía en `avanzarPipeline`, que
+    //       nadie llamaba. Lo que fija, sobre cesiones reales del A2: (a) la oferta se pierde ENTERA sólo si otro factoring
+    //       se llevó TODAS sus facturas, con ese factoring y sus folios; (b) si se llevó una parte, no se pierde y se cuenta
+    //       cuántas; (c) una factura cedida a Security es nuestra y no cuenta; (d) sin facturas, sin cedente o sin cesiones
+    //       no hay pérdida; (e) la decisión no depende del id —no hay sorteo—.
+    let pasa = false, det = "";
+    try {
+      // Se clasifica por lo que el índice del A2 resuelve para ese documento, y con folios distintos: así ninguna
+      // aserción depende de que un mismo folio aparezca dos veces en el registro.
+      const porCed = new Map();
+      for (const a of window.AECSYNC || []) {
+        if (!a || !a.RUTCedente || !a.Folio) continue;
+        const c = cesionDeFactura(a.RUTCedente, a.Folio);
+        if (!c) continue;
+        const g = porCed.get(a.RUTCedente) || { ajenas: [], nuestras: [], folios: new Set() };
+        if (g.folios.has(a.Folio)) continue;
+        g.folios.add(a.Folio);
+        (c.nuestra ? g.nuestras : g.ajenas).push({ ...a, RazonSocialFactoring: c.factoring });
+        porCed.set(a.RUTCedente, g);
+      }
+      const hallado = [...porCed.entries()].find(([, v]) => v.ajenas.length >= 2 && v.nuestras.length >= 1) || null;
+      if (!hallado) throw new Error("el A2 no trae un cedente con dos cesiones ajenas y una nuestra");
+      const [rut, g] = hallado;
+      const fx = (a) => ({ id: `F-${rut}-${a.Folio}`, folio: a.Folio, monto: Math.round(+a.MontoDocumento || 0) });
+      const libre = { id: "F-174-LIBRE", folio: 987654321, monto: 1000000 };
+      const deal = (id, fs) => ({ id, rutEmisor: rut, stage: "oferta", facturasOp: fs });
+      const toda = perdidaPorCesion(deal("T-174a", [fx(g.ajenas[0]), fx(g.ajenas[1])]));
+      const otraId = perdidaPorCesion(deal("T-174z", [fx(g.ajenas[0]), fx(g.ajenas[1])]));
+      const parte = perdidaPorCesion(deal("T-174b", [fx(g.ajenas[0]), libre]));
+      const nada = perdidaPorCesion(deal("T-174c", [libre]));
+      const nuestra = perdidaPorCesion(deal("T-174d", [fx(g.nuestras[0])]));
+      const vacia = perdidaPorCesion(deal("T-174e", []));
+      const sinRut = perdidaPorCesion({ id: "T-174f", stage: "oferta", facturasOp: [fx(g.ajenas[0])] });
+      const nombres = new Set([g.ajenas[0], g.ajenas[1]].map((a) => a.RazonSocialFactoring));
+      const todaOk = toda.pierde === true && toda.n === 2 && nombres.has(toda.factoring) && toda.folios.length === 2 && toda.folios.includes(g.ajenas[0].Folio);
+      const parteOk = parte.pierde === false && parte.n === 1 && parte.factoring === g.ajenas[0].RazonSocialFactoring;
+      const nadaOk = nada.pierde === false && nada.n === 0 && nuestra.pierde === false && nuestra.n === 0 && vacia.pierde === false && sinRut.pierde === false && sinRut.n === 0;
+      const sinSorteo = otraId.pierde === toda.pierde && otraId.n === toda.n && otraId.factoring === toda.factoring;
+      pasa = todaOk && parteOk && nadaOk && sinSorteo;
+      det = `cedente ${rut} · toda cedida a ${toda.factoring}: pierde ${toda.pierde} ${todaOk} · una de dos: pierde ${parte.pierde}, anota ${parte.n} ${parteOk}`
+        + ` · libre / nuestra / vacía / sin cedente ${nadaOk} · sin sorteo (otro id, misma decisión) ${sinSorteo}`;
+    } catch (e) { det = "error: " + String((e && e.message) || e).slice(0, 160); }
+    ok("174 la pérdida por cesión a la competencia es un hecho del A2: la oferta se pierde entera sólo si otro factoring se llevó todas sus facturas, una parte se anota sin perderla, lo cedido a Security no cuenta y la decisión no depende de un sorteo",
+       pasa, det);
+  }
+
+  {
+    // 175 · EL BENCHMARK POR DEUDOR CUENTA SÓLO OPERACIONES DEL TUBO, Y LA TASA DE LA COMPETENCIA ES LA QUE EL EJECUTIVO
+    //       REGISTRÓ (regla 79). `benchmarkPor` sumaba cinco operaciones de «histórico de mercado» por deudor —clientes
+    //       ficticios, montos de $50 a $650 que eran millones— y la tasa de la competencia salía de un hash, aunque el
+    //       ejecutivo la escribe al marcar una pérdida por competencia (`tasaCierreCompetidor`). Lo que fija: (a) sin
+    //       operaciones no hay benchmark; (b) cada fila es una operación ganada o perdida ante un competidor, y las abiertas
+    //       no entran; (c) la tasa de la competencia es la registrada, y sin registro es nula —no se promedia ni se inventa—;
+    //       (d) nuestra tasa también: sin simular no hay tasa BICE; (e) la estrategia compara contra lo registrado y, si no
+    //       hay nada registrado, pide registrarlo; (f) las filas van en orden cronológico por su fecha.
+    let pasa = false, det = "";
+    try {
+      const vacio = benchmarkPor([], "deudor");
+      const deals = [
+        { id: "T-175a", stage: "giro", deudor: "DEUDOR 175", cliente: "CLIENTE A 175", tasa: "1.50", monto: 10000000, time: "19-06-2026 09:00:00.000" },
+        { id: "T-175b", stage: "perdida", deudor: "DEUDOR 175", cliente: "CLIENTE B 175", tasa: "1.45", monto: 20000000, cedidaCompetidor: "Tanner Servicios Financieros", tasaCierreCompetidor: "1.32", fechaPerdida: "20-06-2026 10:00:00.000" },
+        { id: "T-175c", stage: "perdida", deudor: "DEUDOR 175", cliente: "CLIENTE C 175", tasa: "1.60", monto: 5000000, cedidaCompetidor: "Eurocapital", fechaPerdida: "21-06-2026 11:00:00.000" },
+        { id: "T-175d", stage: "perdida", deudor: "DEUDOR 175", cliente: "CLIENTE D 175", monto: 7000000, cedidaCompetidor: "Incofin", tasaCierreCompetidor: "1.40", fechaPerdida: "22-06-2026 12:00:00.000" },
+        { id: "T-175e", stage: "oferta", deudor: "DEUDOR 175", cliente: "CLIENTE E 175", tasa: "1.55", monto: 3000000 },
+        { id: "T-175f", stage: "perdida", deudor: "DEUDOR 175-B", cliente: "CLIENTE F 175", tasa: "1.70", monto: 4000000, cedidaCompetidor: "Factotal", fechaPerdida: "22-06-2026 13:00:00.000" },
+      ];
+      const grupos = benchmarkPor(deals, "deudor");
+      const d = grupos.find((x) => x.key === "DEUDOR 175"), d2 = grupos.find((x) => x.key === "DEUDOR 175-B");
+      const fila = (cli) => (d ? d.entries.find((e) => e.cliente === cli) : null);
+      const b = fila("CLIENTE B 175"), c = fila("CLIENTE C 175"), dd = fila("CLIENTE D 175");
+      const clientes = new Set(deals.map((x) => x.cliente));
+      const filasOk = vacio.length === 0 && grupos.length === 2 && !!d && d.entries.length === 4 && d.won === 1 && d.lost === 3 && !fila("CLIENTE E 175")
+        && grupos.every((gr) => gr.entries.every((e) => clientes.has(e.cliente)));
+      const tasasOk = !!b && !!c && !!dd && b.tasaComp === 1.32 && c.tasaComp === null && dd.tasaComp === 1.4 && dd.tasa === null && b.competidor === "Tanner Servicios Financieros" && d.avgComp === 1.36;
+      const estrategiaOk = d.estrategia.includes("1.36") && !!d2 && d2.avgComp === null && /registr/i.test(d2.estrategia);
+      const ordenOk = d.entries.every((e, i) => i === 0 || d.entries[i - 1].fecha <= e.fecha) && b.fecha < c.fecha;
+      pasa = filasOk && tasasOk && estrategiaOk && ordenOk;
+      det = `sin operaciones → ${vacio.length} grupos · filas ${d ? d.entries.length : "—"} (sólo las del tubo) ${filasOk} · tasa registrada ${b ? b.tasaComp : "—"}, sin registro ${c ? c.tasaComp : "—"}, promedio ${d ? d.avgComp : "—"} ${tasasOk}`
+        + ` · estrategia ${estrategiaOk} · orden ${ordenOk}`;
+    } catch (e) { det = "error: " + String((e && e.message) || e).slice(0, 160); }
+    ok("175 el benchmark por deudor cuenta sólo operaciones del tubo: sin historia de mercado inventada, la tasa de la competencia es la de cierre que el ejecutivo registró —y sin registro queda vacía—, y la estrategia compara contra eso o pide registrarlo",
+       pasa, det);
+  }
+
+  // 176 · EL CATÁLOGO DE TRANSICIONES MANUALES (regla 80, G-25). `moverEtapa` tenía guardas —perdida
   // terminal, «Aceptada» y giro bloqueados, OTG-02 por su código— y aun así dejaba tres agujeros: perder
   // sin causa, pasar a cesión sin `integracion` (la operación se rotulaba «Aceptada» y no aparecía en
   // Operaciones: invisible, no bloqueada) y retroceder de etapa conservando la firma.
   {
-    const enOferta = { id: "T-172", cliente: "Cliente 172", stage: "oferta" };
+    const enOferta = { id: "T-176", cliente: "Cliente 176", stage: "oferta" };
     const enOtorg = { ...enOferta, stage: "otorgamiento" };
     const perdida = { ...enOferta, stage: "perdida" };
     // (a) PÉRDIDA SIEMPRE CON CAUSA, y la causa no se escribe acá: se DELEGA en `reject`, que es el único
@@ -8593,50 +8843,50 @@
     const puroOk = JSON.stringify(enOtorg) === antes
       && JSON.stringify(transicionManual(enOferta, "perdida", {})) === JSON.stringify(sinCausa)
       && transicionManual(null, "cesion", {}).ok === false;
-    ok("172 el catálogo de transiciones manuales tiene guardas: no se pierde sin causa (se delega en reject), pasar a cesión deja la operación Pendiente Integración y fuera del tubo, «Aceptada» y giro no son acciones del ejecutivo, no se retrocede de etapa y la pérdida es terminal",
+    ok("176 el catálogo de transiciones manuales tiene guardas: no se pierde sin causa (se delega en reject), pasar a cesión deja la operación Pendiente Integración y fuera del tubo, «Aceptada» y giro no son acciones del ejecutivo, no se retrocede de etapa y la pérdida es terminal",
        causaOk && cesionOk && destinosOk && ordenOk && terminalOk && puroOk,
        `causa ${causaOk} (sin causa «${sinCausa.codigo}» · con causa delega ${conCausa.delegar}) · cesión ${cesionOk} (integracion «${aCesion.patch && aCesion.patch.integracion}» · estado «${estadoOperacion({ ...enOtorg, ...aCesion.patch })}») · destinos ${destinosOk} (aceptadas ${aAceptadas.codigo} · giro ${aGiro.codigo}) · orden ${ordenOk} (atrás ${atras.codigo}) · terminal ${terminalOk} · puro ${puroOk}`);
   }
 
-  // 173 · TRAS EL OTORGAMIENTO SE VA A OPERACIONES, NO A GIRO (regla 80, G-24). El avance automático
+  // 177 · TRAS EL OTORGAMIENTO SE VA A OPERACIONES, NO A GIRO (regla 80, G-24). El avance automático
   // escribía «Girada» directo, con `giroPendiente: false` y el dinero dado por transferido, sin pasar por
   // `controlesIntegracion`: se saltaba VER-01, LIN-01 y GIR-02. Es el mismo salto que la regla 26 cerró en
   // `etapaTrasFirma` y que volvió por la otra puerta, porque el efecto decidía de nuevo por su cuenta.
   {
-    const base173 = { id: "T-173", rutEmisor: "76.111.111-1", cliente: "Cliente 173", monto: 30 * MMF,
+    const base177 = { id: "T-177", rutEmisor: "76.111.111-1", cliente: "Cliente 177", monto: 30 * MMF,
                       stage: "otorgamiento", facturasOp: [], aceptada: true, firmada: true,
                       clienteAcepto: true, otorgAuto: true, otorgMotivo: "automatico" };
-    const todoAprob173 = {};
-    visadoDeal(base173, { visado: {} }).exc.forEach((e) => { todoAprob173[e.stKey] = "aprobado"; });
-    const sinVisar173 = { visado: todoAprob173 };
+    const todoAprob177 = {};
+    visadoDeal(base177, { visado: {} }).exc.forEach((e) => { todoAprob177[e.stKey] = "aprobado"; });
+    const sinVisar177 = { visado: todoAprob177 };
     // (a) El fixture completa el otorgamiento de verdad: sin esto el caso pasaría por vacuidad. Y con el
     //     visado EN BLANCO no lo completa, que es OTG-02 vigente (las dos direcciones).
-    const listo = otorgamientoCompleto(base173, sinVisar173) === true
-      && otorgamientoCompleto(base173, { visado: {} }) === false
-      && avanceTrasOtorgamiento(base173, { visado: {} }) === null;
-    const patch = avanceTrasOtorgamiento(base173, sinVisar173);
+    const listo = otorgamientoCompleto(base177, sinVisar177) === true
+      && otorgamientoCompleto(base177, { visado: {} }) === false
+      && avanceTrasOtorgamiento(base177, { visado: {} }) === null;
+    const patch = avanceTrasOtorgamiento(base177, sinVisar177);
     // (b) LO QUE ESCRIBE: Pendiente Integración, fuera del tubo, y el giro PENDIENTE — no girado.
     const destinoOk = !!patch && patch.stage === "cesion" && patch.integracion === "pendiente"
       && patch.giroPendiente === true && patch.otorgada === true
-      && estadoOperacion({ ...base173, ...patch }) === "Pendiente Integración"
-      && fueraDelTubo({ ...base173, ...patch }) === true;
+      && estadoOperacion({ ...base177, ...patch }) === "Pendiente Integración"
+      && fueraDelTubo({ ...base177, ...patch }) === true;
     // (c) LO QUE NO ESCRIBE, que es el defecto: ni la etapa de giro ni el «Girada» de `giroPendiente: false`.
     const noGiraOk = !!patch && patch.stage !== "giro" && patch.giroPendiente !== false
-      && estadoOperacion({ ...base173, ...patch }) !== "Girada";
+      && estadoOperacion({ ...base177, ...patch }) !== "Girada";
     // (d) VER-01 · con una factura inhabilitada por el SII la verificación queda pendiente (regla 75) y el
     //     avance NO ocurre: `otorgamientoCompleto` mira el VISADO, no las llamadas, así que sin esta
     //     comprobación una operación por verificar salía hacia Operaciones igual.
-    const conVeto = { ...base173, facturasOp: [{ id: "v1", folio: 900173, monto: 30 * MMF, deudor: LB[3],
+    const conVeto = { ...base177, facturasOp: [{ id: "v1", folio: 900173, monto: 30 * MMF, deudor: LB[3],
                                                  inhabilitada: { glosa: "Nota de crédito emitida", motivo: "nc" } }] };
-    const pendN = verifResumenDeal(conVeto, sinVisar173).pend;
-    const ver01Ok = pendN > 0 && avanceTrasOtorgamiento(conVeto, sinVisar173) === null;
+    const pendN = verifResumenDeal(conVeto, sinVisar177).pend;
+    const ver01Ok = pendN > 0 && avanceTrasOtorgamiento(conVeto, sinVisar177) === null;
     // (e) Y fuera de Otorgamiento no avanza nada: la compuerta no se puede empujar desde otra etapa.
-    const fueraOk = avanceTrasOtorgamiento({ ...base173, stage: "oferta" }, sinVisar173) === null
-      && avanceTrasOtorgamiento({ ...base173, stage: "cesion" }, sinVisar173) === null
-      && avanceTrasOtorgamiento(null, sinVisar173) === null;
-    ok("173 el otorgamiento completo deja la operación Pendiente Integración y fuera del tubo, nunca Girada: el giro queda pendiente para que lo autorice Operaciones, la verificación pendiente detiene el avance (VER-01) y fuera de Otorgamiento no avanza",
+    const fueraOk = avanceTrasOtorgamiento({ ...base177, stage: "oferta" }, sinVisar177) === null
+      && avanceTrasOtorgamiento({ ...base177, stage: "cesion" }, sinVisar177) === null
+      && avanceTrasOtorgamiento(null, sinVisar177) === null;
+    ok("177 el otorgamiento completo deja la operación Pendiente Integración y fuera del tubo, nunca Girada: el giro queda pendiente para que lo autorice Operaciones, la verificación pendiente detiene el avance (VER-01) y fuera de Otorgamiento no avanza",
        listo && destinoOk && noGiraOk && ver01Ok && fueraOk,
-       `fixture ${listo} · destino ${destinoOk} (stage «${patch && patch.stage}» · integracion «${patch && patch.integracion}» · estado «${estadoOperacion({ ...base173, ...patch })}») · no gira ${noGiraOk} · VER-01 ${ver01Ok} (${pendN} pendiente(s)) · fuera de otorgamiento ${fueraOk}`);
+       `fixture ${listo} · destino ${destinoOk} (stage «${patch && patch.stage}» · integracion «${patch && patch.integracion}» · estado «${estadoOperacion({ ...base177, ...patch })}») · no gira ${noGiraOk} · VER-01 ${ver01Ok} (${pendN} pendiente(s)) · fuera de otorgamiento ${fueraOk}`);
   }
 
   console.log(out.join("\n"));

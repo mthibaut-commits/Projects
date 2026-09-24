@@ -61,3 +61,14 @@ export const canonico = (texto) =>
     .replace(/,\s*([)\]}])/g, "$1")
     .replace(/([([{])\s+/g, "$1")
     .replace(/\s+([)\]}])/g, "$1");
+
+/* El TRAMO de una declaración de nivel módulo: desde su firma (`function X(`, `const X = (() => {`) hasta la siguiente
+   declaración a columna 0. Es la misma guarda que hizo segura la poda (`.claude/rules/code_style.md`): el final de una
+   declaración lo marca la ESTRUCTURA del archivo, no el primer `}` que aparezca. Devuelve "" si la firma no está. */
+export function tramo(src, firma) {
+  const i = src.indexOf(firma);
+  if (i < 0) return "";
+  const resto = src.slice(i + firma.length);
+  const m = /\n(?:export default )?(?:async )?(?:function|const|let|var|class) /.exec(resto);
+  return src.slice(i, m ? i + firma.length + m.index : src.length);
+}
