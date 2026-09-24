@@ -13,8 +13,8 @@ timestamp: 2026-09-24T01:30:00Z
 ## Fase del proyecto
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
 (`pipeline_comercial.jsx`), build standalone, **178/178 PASA**, **71 archivos de gate de contrato**,
-**39 casos e2e** (39/39), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
-(110 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
+**40 casos e2e** (40/40), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(111 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
 gate. La crónica del 17 al 23-09 vive en sus logs: el backlog decidido del curse (reglas 64–75, ADR-0013 a 0021), la
 plata (60–62), el orden de la carpeta, los entregables versionados y `Casos_de_Prueba/`.
 
@@ -34,7 +34,10 @@ método: colapsar sacó un botón del DOM y un e2e pasó por su rama de respaldo
 ([log](./2026-09-24_cinco_de_ui_y_un_colapsable_que_se_llevo_el_boton.md)). Y **regla 81 · caso 178**: las filas «Sin
 clasificar» del tubo se juntan por RUT y llevan el `opId` —uno de los 8 sitios del join por RUT—, sólo las ve el gestor
 del pipeline (rol `inbound`) y el desglose de `capacidadDeudores` **siempre cuadra** con el encabezado
-([log](./2026-09-24_el_tubo_se_junta_por_rut.md)).
+([log](./2026-09-24_el_tubo_se_junta_por_rut.md)). Y **regla 82 · `e2e-82-a`**: el encabezado del detalle mide lo
+mismo en todos los tabs (alto mínimo fijo + `scrollbar-gutter: stable`), más cuatro de UI en Verificación —chip de
+cabecera sólo si el deudor está partido, sin columna Tasa, el panel de la API en una fila, y la tabla ordenada por
+tipo · folio · emisión · vencimiento · monto con estado en tres valores— ([log](./2026-09-24_el_encabezado_no_salta.md)).
 
 > ## 🎯 Siguiente paso
 >
@@ -45,8 +48,7 @@ del pipeline (rol `inbound`) y el desglose de `capacidadDeudores` **siempre cuad
 >    tampoco llegaron.** Mirar `rolDeAreaNivel`, `puedeAprobarExc` y «Sólo mis pendientes» de `OtorgamientosView`.
 > 2. **Cinco gaps del curse decididos el 23-09 y sin implementar** (matriz §2.2, con el texto verbatim del usuario):
 >    **G-23** · **G-18** · **G-27** · **G-28** · **G-05**; **G-29** queda como T2.
-> 3. **Lo demás**: selector de sesión 1/3 más angosto con elipsis · chip «Negociación» en una operación ya enviada a
->    comité · `.bat` una vez · O01 · 28 · 13-quater · `pipeline.zip`.
+> 3. **Lo demás**: selector de sesión angosto con elipsis · chip «Negociación» tras enviar a comité · `.bat` · O01 · 28 · 13-quater · `pipeline.zip`.
 
 ## En vuelo · nada: la revisión de Reportes (reglas 76–79) entró a `main` el 24-09
 **Antes de modificar se integra `main`**: skill `sincronizar-main` + `node sincronizar_main.mjs` (paso 0 del ciclo), y se

@@ -12191,13 +12191,14 @@ function DealMensajeria({ deal, usuario }) {
 }
 // Sub-tab VERIFICACIÓN: criterios V01–V10 del predictor, versionado (patrón otorgamiento),
 // filtros y checklist telefónico. El veredicto es del DEUDOR: todas sus facturas lo comparten.
-// `tasaDe(factura)` entra por PARÁMETRO y no se calcula acá: la tasa sale del spread del deudor que el
-// detalle fijó AL MONTARSE —el pactado si la operación ya se simuló, el sugerido si no—, y calcularla
-// de nuevo con el sugerido mostraría en esta tabla una tasa distinta de la que se está mirando dos
-// pestañas más allá: el mismo documento con dos precios en la misma pantalla.
+// La tabla por factura NO trae la tasa (24-09-2026, pedido del usuario): es del pricing y no de la verificación.
+// Hasta entonces entraba por parámetro (`tasaDe`) para no recalcularla con el spread sugerido y mostrar acá un
+// precio distinto del de la pestaña de al lado; sin la columna, el parámetro se fue con ella.
 // (El mapa `spreadDeudor` se lee en cinco sitios y su setter no se llama nunca: la EDICIÓN del spread
 // por deudor que su forma de estado promete no existe. Ver `Auditoria/Auditoria_Codigo_Muerto.md` §1.4.)
-function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoConfirmada, usuario, tasaDe }) {
+// El código SII del tipo de documento («Factura (33)» → "33"); sin código, 33, que es lo que la oferta trae casi siempre.
+const tipoDocCodigo = (f) => (((f && f.tipo) || "").match(/\((\d+)\)/) || [])[1] || "33";
+function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoConfirmada, usuario }) {
   // Misma compuerta que la mesa: registrar la llamada o retirar una factura es firmar lo que el
   // deudor dijo, y eso lo hace el equipo de verificación. Los demás leen el veredicto del modelo.
   const puedeMarcar = puedeVerificarFacturas((SESION && SESION.usuario) || usuario);
@@ -12213,7 +12214,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
   const [open, setOpen] = useState({});
   const [abiertoDeudor, setAbiertoDeudor] = useState({});
   // Columnas de la fila de factura: chevron · folio · tipo · emisión · vencimiento · tasa · monto · verif.
-  const GC_VF = "14px minmax(72px,1fr) 104px 88px 88px 56px 82px 112px";
+  const GC_VF = "14px 104px minmax(72px,1fr) 88px 88px 82px 124px";
   // Las verificaciones telefónicas se persisten: vivían en este useState y se perdían al cerrar el
   // detalle, aunque la pantalla prometiera lo contrario. Al reabrir una operación para modificarla,
   // rehacer una llamada ya hecha son 3–4 horas por deudor tiradas.
@@ -12275,7 +12276,23 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
       por[k].items.push(x);
       por[k].monto += x.f.monto || 0;
     });
-    return orden.map((k) => por[k]);
+    // LAS FILAS VAN ORDENADAS, SIEMPRE, por tipo de documento, folio, fecha de emisión, fecha de vencimiento y
+    // monto (24-09-2026, definición del usuario: «siempre que hayan facturas la tabla se ordena por Tipo
+    // Documento, Folio, Fecha Emisión, Fecha Vencimiento y Monto»). Es el mismo orden en que van las columnas,
+    // así que la tabla se lee como se ordena. Antes salían en el orden del paquete, que es el de la oferta.
+    const t = (d) => (d ? new Date(d).getTime() || 0 : 0);
+    const cmp = (a, b) => {
+      const fa = fechasDocumento(a.f),
+        fb = fechasDocumento(b.f);
+      return (
+        tipoDocCodigo(a.f).localeCompare(tipoDocCodigo(b.f)) ||
+        (+a.f.folio || 0) - (+b.f.folio || 0) ||
+        t(fa.emision) - t(fb.emision) ||
+        t(fa.vencimiento) - t(fb.vencimiento) ||
+        (a.f.monto || 0) - (b.f.monto || 0)
+      );
+    };
+    return orden.map((k) => ({ ...por[k], items: por[k].items.slice().sort(cmp) }));
   })();
   // La Nota Deudor viene del maestro de comportamiento de pago: de 1 a 5 con un decimal, y en la UI
   // con coma. Sin nota en el maestro NO es «0» —que es la peor nota posible— sino ausencia de dato.
@@ -12328,36 +12345,40 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
           </div>
         ) : null;
       })()}
-      <div className="mt-2 rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-        <div className="flex items-center justify-between t10 font-bold uppercase tracking-wide" style={{ color: C.ink }}>
-          Verificación del modelo · API de riesgo{" "}
+      {/* UNA SOLA FILA (24-09-2026, pedido del usuario): el título, los tres contadores, el «Actualizado» y el
+          botón. Se fueron el párrafo explicativo —vive en el `title` del botón, que es donde se lee cuando
+          hace falta— y la caja «Consulta a la API de riesgo · fecha», que repetía la fecha del chip de al
+          lado con otras palabras y separaba los contadores del título que los nombra. */}
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-xl px-3 py-2" style={{ border: `1px solid ${C.line}` }}>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="t10 font-bold uppercase tracking-wide" style={{ color: C.ink }}>
+            Verificación del modelo · API de riesgo
+          </span>
+          <span className="flex gap-3 t10 font-semibold">
+            <span style={{ color: C.ink }} title="Documentos consultados a la API de riesgo (par cliente-deudor, 3M)">
+              ● {items.length}
+            </span>
+            <span style={{ color: "#16A34A" }} title="Verificados por el modelo: todos los criterios dentro de umbral">
+              ✓ {nOk}
+            </span>
+            <span style={{ color: "#C2410C" }} title="Requieren verificación telefónica con el deudor">
+              ⚠ {nTel}
+            </span>
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
           <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#5B21D6" }}>
             Actualizado {refrescado}
           </span>
-        </div>
-        <p className="mt-1 t10" style={{ color: C.sub }}>
-          El resultado por documento proviene de la <b style={{ color: C.ink }}>API de riesgo</b> (par cliente-deudor, 3M).{" "}
-          <b style={{ color: C.ink }}>V01 es compuerta</b>: si el deudor tiene protocolo propio, se verifica siguiéndolo y no se evalúa ningún otro criterio.
-          Refresca para volver a consultar la API; la verificación telefónica registrada <b style={{ color: C.ink }}>no se pierde</b>.
-        </p>
-        <button
-          disabled={bloqueado}
-          onClick={() => setRefrescado(nowStamp())}
-          className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t11 font-semibold text-white disabled:opacity-50"
-          style={{ backgroundColor: C.indigo }}
-        >
-          <RotateCcw size={12} /> Refrescar
-        </button>
-        <div
-          className="mt-1.5 flex items-center gap-2 rounded-lg px-3 py-1.5 t10"
-          style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}
-        >
-          Consulta a la API de riesgo · {refrescado}
-          <span className="ml-auto flex gap-3 t10 font-semibold">
-            <span style={{ color: C.ink }}>● {items.length}</span>
-            <span style={{ color: "#16A34A" }}>✓ {nOk}</span>
-            <span style={{ color: "#C2410C" }}>⚠ {nTel}</span>
-          </span>
+          <button
+            disabled={bloqueado}
+            onClick={() => setRefrescado(nowStamp())}
+            title="Volver a consultar la API de riesgo (par cliente-deudor, 3M). V01 es compuerta: si el deudor tiene protocolo propio, se verifica siguiéndolo y no se evalúa ningún otro criterio. La verificación telefónica registrada no se pierde."
+            className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t11 font-semibold text-white disabled:opacity-50"
+            style={{ backgroundColor: C.indigo }}
+          >
+            <RotateCcw size={12} /> Refrescar
+          </button>
         </div>
       </div>
       <div className="mt-2 flex items-center justify-between">
@@ -12390,14 +12411,13 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
         {grupos.map((g) => {
           const abierto = !!abiertoDeudor[g.deudor];
           const nTelG = g.items.filter((y) => y.v.est === "tel").length;
-          // Tres estados de grupo, y el tercero es el que importa: con la confirmación parcial el
-          // deudor queda partido, y decir sólo «Req. verif.» escondería que la mitad ya está.
-          const estG =
-            nTelG === 0
-              ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" }
-              : nTelG === g.items.length
-                ? { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." }
-                : { bg: "#FFF7ED", fg: "#C2410C", t: `⚠ ${nTelG} de ${g.items.length} por verificar` };
+          // EL CHIP DE LA CABECERA SÓLO CUANDO DICE ALGO QUE LAS FILAS NO DICEN (24-09-2026, pedido del
+          // usuario: «el ⚠ Req. verif. del header se repite en cada factura y las filas están siempre a la
+          // vista; está repetitivo»). «Req. verif.» y «Verificada» ya van en cada fila y las filas no se
+          // pliegan, así que arriba eran la misma palabra una vez más. La cabecera sólo agrega información
+          // cuando el deudor queda PARTIDO por una confirmación parcial —«3 de 6 por verificar»—, que es lo
+          // único que ninguna fila sola puede decir.
+          const estG = nTelG > 0 && nTelG < g.items.length ? { bg: "#FFF7ED", fg: "#C2410C", t: `⚠ ${nTelG} de ${g.items.length} por verificar` } : null;
           return (
             <div key={g.deudor} className="mb-1.5 overflow-hidden rounded-lg" style={{ border: `1px solid ${C.line}` }}>
               {/* El chip, la nota y el nombre viven ACÁ y no en cada fila: son del deudor, y repetidos
@@ -12446,13 +12466,15 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
                 <span className="w-16 shrink-0 text-right font-medium" style={{ color: C.ink }}>
                   {fmtMM(g.monto)}
                 </span>
-                <span
-                  className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold"
-                  style={{ backgroundColor: estG.bg, color: estG.fg }}
-                  title="El veredicto es del deudor: una llamada cubre todas sus facturas. Se divide sólo si la confirmación fue parcial."
-                >
-                  {estG.t}
-                </span>
+                {estG && (
+                  <span
+                    className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold"
+                    style={{ backgroundColor: estG.bg, color: estG.fg }}
+                    title="El veredicto es del deudor: una llamada cubre todas sus facturas. Se divide sólo si la confirmación fue parcial."
+                  >
+                    {estG.t}
+                  </span>
+                )}
               </div>
               {/* LA EVALUACIÓN ES DEL DEUDOR. `verifDecision` calcula V00–V10 UNA vez sobre el conjunto
                   de facturas del par cliente-deudor: dibujarlos dentro de cada fila mostraba el mismo
@@ -12532,11 +12554,14 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
                   })}
                 </div>
               )}
-              {/* Los DATOS DEL DOCUMENTO, en el mismo orden y con los mismos títulos que la tabla de
-              candidatas: folio · tipo · emisión · vencimiento · tasa · monto. La fila traía sólo el
-              folio y el monto, y quien está por gastar 3–4 horas llamando al deudor necesita saber qué
-              factura le está confirmando —de qué tipo, de cuándo y a qué plazo—. La cabecera va dentro
-              de cada grupo porque sin ella dos fechas seguidas no dicen cuál es cuál. */}
+              {/* Los DATOS DEL DOCUMENTO, con los mismos títulos que la tabla de candidatas y en el orden en
+              que se ordenan las filas: tipo · folio · emisión · vencimiento · monto · estado (24-09-2026,
+              definición del usuario). La fila traía sólo el folio y el monto, y quien está por gastar 3–4
+              horas llamando al deudor necesita saber qué factura le está confirmando —de qué tipo, de
+              cuándo y a qué plazo—. La cabecera va dentro de cada grupo porque sin ella dos fechas seguidas
+              no dicen cuál es cuál. SIN TASA (mismo día: «no es relevante para la verificación»): la tasa es
+              del pricing, y al deudor no se le confirma un precio sino que el documento existe, se recibió
+              y cuándo se paga. */}
               <div className="overflow-x-auto px-2">
                 <div style={{ minWidth: 660 }}>
                   <div
@@ -12544,27 +12569,31 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
                     style={{ gridTemplateColumns: GC_VF, color: C.faint, borderBottom: `1px solid ${C.line}` }}
                   >
                     <span></span>
-                    <span>Folio</span>
                     <span>Tipo doc.</span>
+                    <span>Folio</span>
                     <span>F. emisión</span>
                     <span>F. vencim.</span>
-                    <span className="text-right">Tasa</span>
                     <span className="text-right">Monto</span>
-                    <span>Verif.</span>
+                    <span>Estado</span>
                   </div>
                   {g.items.map((x) => {
                     const f = x.f,
                       v = x.v,
                       isOpen = !!open[f.id];
                     const tel = v.tel;
-                    const estPill =
-                      v.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
-                    const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
+                    // TRES ESTADOS (24-09-2026, definición del usuario: «Estado = Req. Verificación / Verificada / No
+                    // Verificada»). La tercera es la marca de la regla 71 —el deudor no la confirmó, o el SII la
+                    // inhabilitó— y antes esta tabla la mostraba como «Req. verif.», igual que una que nadie llamó.
+                    const estPill = noConfirmada(deal, f)
+                      ? { bg: "#fef2f2", fg: "#B91C1C", t: "✕ No Verificada" }
+                      : v.est === "ok"
+                        ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" }
+                        : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. Verificación" };
+                    const tdn = tipoDocCodigo(f);
                     const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
                     const fd = fechasDocumento(f);
                     const em = fmtFechaDoc(fd.emision),
                       venc = fmtFechaDoc(fd.vencimiento);
-                    const tasaF = tasaDe ? tasaDe(f) : null;
                     return (
                       <div key={f.id} style={{ borderBottom: `1px solid ${C.line}` }}>
                         <div
@@ -12578,20 +12607,17 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
                           ) : (
                             <span />
                           )}
-                          <span className="truncate font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>
-                            #{f.folio}
-                          </span>
                           <span className="truncate t9" style={{ color: C.sub }} title={tdoc}>
                             {tdoc}
+                          </span>
+                          <span className="truncate font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>
+                            #{f.folio}
                           </span>
                           <span className="t9" style={{ color: C.faint }}>
                             {em}
                           </span>
                           <span className="t9" style={{ color: C.faint }}>
                             {venc}
-                          </span>
-                          <span className="text-right font-medium" style={{ color: C.ink }}>
-                            {tasaF != null ? `${tasaF}%` : "—"}
                           </span>
                           <span className="text-right font-medium" style={{ color: C.ink }}>
                             {fmtMM(f.monto)}
@@ -13909,8 +13935,12 @@ function DealDrawer({
             {esPrimeraOperacionCliente(deal) && <TagNuevo clase="t10" />}
           </div>
           {/* Tabs y acciones comparten la línea: los tabs ocupan sólo su ancho y las acciones quedan
-              inline a la derecha, sobre la misma divisoria. */}
-          <div className="mt-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
+              inline a la derecha, sobre la misma divisoria. LA FILA MIDE LO MISMO CON O SIN BOTÓN (regla 82,
+              24-09-2026, reportado por el usuario: «saltos en la estructura de la página» al cambiar de tab):
+              «Pre-evaluación» sólo existe en Negocio y estiraba la fila de 31 a 48 px, así que el cuerpo entero
+              saltaba 17 px en cada cambio. El alto mínimo es el de la fila con el botón; los tabs se alinean
+              abajo, sobre la divisoria, tenga la fila botón o no. */}
+          <div className="mt-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-2" style={{ borderBottom: `1px solid ${C.line}`, minHeight: 48 }}>
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
               {/* CESIÓN y GIRO están en la lista del tab de Otorgamiento por la misma razón que en la
                   del de Verificación: firmar el cliente no borra lo que falta aprobar ni lo ya aprobado.
@@ -14085,9 +14115,6 @@ function DealDrawer({
                 bloqueado={["giro", "perdida"].includes(deal.stage)}
                 onNoConfirmada={(f) => setConfirmNoConf(f)}
                 usuario={usuario}
-                tasaDe={(f) =>
-                  ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + CFG_ACTIVA.costoFondo).toFixed(2)
-                }
               />
             </div>
           )}
@@ -52554,6 +52581,10 @@ export default function PipelineComercial() {
         .pl-sim{background-color:#F3F2F7;transition:background-color .12s} .pl-row:hover .pl-sim{background-color:#E7E0FB}
         /* Detalle en pestaña propia (_blank): homogeniza la tipografía al tamaño del sitio padre (los tiers chicos del drawer se veían más pequeños) */
         .dp-detalle .t9{font-size:13.5px;line-height:1.4}.dp-detalle .t10{font-size:14px;line-height:1.4}.dp-detalle .t11{font-size:15px;line-height:1.45}.dp-detalle .t12{font-size:15px}
+        /* Regla 82 · la pestaña del detalle RESERVA el canal de la barra de scroll: sin esto el ancho entero se corría
+           ~17 px cuando un tab cabía sin scroll y el siguiente no. Sólo el detalle: el tubo siempre tiene scroll y la
+           portada es position:fixed. */
+        html:has(.dp-detalle){scrollbar-gutter:stable}
         /* Última fila sin divisor inferior: evita la doble línea contra el borde del contenedor de la tabla */
         tbody tr:last-child{border-bottom:0 !important} tbody tr:last-child>td{border-bottom:0 !important}
         /* El gris del esqueleto es el de los bordes (C.line): con #F3F4F6 apenas se despegaba del blanco

@@ -151,3 +151,20 @@ timestamp: 2026-09-17T15:29:14Z
       sin `DESIGN.md`, y eso vale para CUALQUIER referencia externa —una captura, un Figma, un `DESIGN.md` que
       alguien traiga—. Cómo se las corrigió mientras estuvieron, medido (12 de 39 chocaban), queda en el log
       `2026-09-23_la_skill_se_corrige.md`.
+
+82. **El encabezado del detalle mide lo mismo en todos los tabs, y la barra de scroll tiene su canal reservado**
+    (24-09-2026, reportado por el usuario: «hay unas diferencias en los bloques de datos sobre el tab, cuando te cambias
+    de tab Negocio, Otorgamiento se producen unos saltos en la estructura de la página»). Medido en el detalle real, a
+    1.600 px de ancho: en **Negocio** la fila de tabs medía **48 px** —el botón «Pre-evaluación» (39 px) sólo existe ahí
+    y la estiraba— y en **Otorgamiento 31 px**, así que el cuerpo empezaba en y=216 en uno y en y=199 en el otro: **17 px
+    de salto vertical** en cada cambio. El segundo salto es horizontal: la barra de scroll de la pestaña aparece o
+    desaparece según el largo del tab, y Chrome en Windows le reserva ~17 px, así que se corre todo el ancho.
+    - **Ahora:** la fila de tabs tiene **alto mínimo fijo** (`minHeight: 48`, el alto de la fila con el botón) y los
+      tabs se alinean abajo, sobre la divisoria, tenga la fila botón o no; y el documento de la pestaña del detalle
+      declara `scrollbar-gutter: stable` (`html:has(.dp-detalle)`), con lo que el canal de la barra queda reservado
+      aunque el tab quepa sin scroll. El resto no cambia: el tubo siempre tiene scroll y la portada es `position: fixed`.
+    - **Por qué un alto mínimo y no esconder el botón:** un botón invisible sigue en el orden del teclado y el lector de
+      pantalla lo anuncia; un alto fijo no tiene esa deuda y aguanta que mañana la fila lleve otro botón de la misma
+      altura (el menú «Acciones» también mide 39 px).
+    - Gate `e2e-82-a`: para cada tab de la tira, el alto del encabezado pegajoso y el `top` del cuerpo son los mismos,
+      y el `scrollbar-gutter` calculado del documento es `stable`.
