@@ -29,7 +29,7 @@ const entre = (src, desde, hasta) => {
 /* El handler `moverEtapa` hasta su `setDeals(`: todo control tiene que vivir acá adentro. */
 export const cabezaMoverEtapa = (src) => entre(canonico(src), "const moverEtapa = (id, stageId, opts) => {", "setDeals((prev) => {");
 
-/* El catálogo PURO al que `moverEtapa` le pregunta desde la regla 76. Las guardas que antes estaban
+/* El catálogo PURO al que `moverEtapa` le pregunta desde la regla 80. Las guardas que antes estaban
    escritas en el handler viven acá, y es acá donde hay que exigirlas: el handler puede reescribirse. */
 export const catalogoTransiciones = (src) => entre(canonico(src), "function transicionManual(deal, stageId, opts) {", "// LA ASIGNACIÓN DE LÍNEA");
 

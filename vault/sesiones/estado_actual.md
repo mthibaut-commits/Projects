@@ -18,7 +18,7 @@ Demo funcional del pipeline comercial de factoring para BICE / Factoring Securit
 (105 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
 gate. La crónica del 17 al 23-09 vive en sus logs: ADR-0001 a 0021, reglas 41–75 y el backlog del curse entero.
 
-**Cierre del 23-09 (ADR-0023, regla 76, casos 172 y 173):** las tres transiciones que se escribían por fuera.
+**Cierre del 23-09 (ADR-0024, regla 80, casos 172 y 173):** las tres transiciones que se escribían por fuera.
 Tras el otorgamiento la operación queda **Pendiente Integración** y nunca «Girada» (`stage: "giro"` tiene UN
 escritor: `aprobarIntegracion`); las dos puertas manuales pasan por el catálogo puro `transicionManual` —la
 pérdida **exige causa** y se delega en `reject`—; y el intent `cursar` de WhatsApp manda el **enlace**, no la
@@ -64,7 +64,7 @@ quedan `main`, la de la sesión, `respaldo/main-2026-09-17` (no se toca) y `clau
 ÚNICA copia del estado local del 10-09 (`git cherry` la da `+`: borrarla lo pierde).
 
 ## Deudas anotadas (no bloquean, no olvidar)
-1. **Perder dejó de ser un destino manual** (regla 76): el gesto es «Rechazar», que pide el motivo. Para
+1. **Perder dejó de ser un destino manual** (regla 80): el gesto es «Rechazar», que pide el motivo. Para
    perder arrastrando habría que abrir ahí el menú de motivos; el contrato ya lo admite
    (`moverEtapa(id, "perdida", { closeReason })` delega en `reject`) y el caso 172 lo cubre.
 2. **Mojibake en el padrón**: 38 de 1.983 identidades traen `?` donde va `Ñ`/`Ó`/`Í`; se arregla re-extrayendo del

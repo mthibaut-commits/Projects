@@ -183,7 +183,7 @@ timestamp: 2026-09-17T15:29:14Z
       `solicitarAprobacionExc` y la declaración en `enviarPreEval`, cada uno con sonda).
 
 
-76. **Nadie escribe una transición que no le corresponde, y la máquina de estados NO es una fila** (23-09-2026, instrucción del
+80. **Nadie escribe una transición que no le corresponde, y la máquina de estados NO es una fila** (23-09-2026, instrucción del
     usuario sobre los gaps G-24, G-25 y G-26 del proceso de curse: «tienes que hacer que se cumplan las reglas del flujo»,
     «debes hacer que esas transiciones sí se guarden — siempre que haya una pérdida se debe almacenar la causa que la originó,
     no sólo la transición a pérdida», «la respuesta de WhatsApp no vale como una firma»). Las reglas 1, 5 y 26 estaban escritas
@@ -236,9 +236,9 @@ timestamp: 2026-09-17T15:29:14Z
       y el estado dice «Enlace de cierre enviado · esperando la firma en el portal». **`telValidado` se queda**: dice que el
       teléfono es un canal de contacto válido —lo leen `contactoOk` y el badge de contacto— y no tiene nada que ver con aceptar.
     - Casos **172** (el catálogo) y **173** (el avance a Pendiente Integración, con VER-01 en las dos direcciones) y
-      `regla_76.test.mjs`, que exige el escritor único de `stage: "giro"`, las dos compuertas dentro de la función pura, que
+      `regla_80.test.mjs`, que exige el escritor único de `stage: "giro"`, las dos compuertas dentro de la función pura, que
       `moverEtapa` consulte el catálogo y que el intent `cursar` no escriba `clienteAcepto` — cada uno con su sonda.
-    - **Un gate que mira el texto tiene que mirar el CÓDIGO.** `regla_76` prohibía el identificador `clienteAcepto` dentro del
+    - **Un gate que mira el texto tiene que mirar el CÓDIGO.** `regla_80` prohibía el identificador `clienteAcepto` dentro del
       intent y se puso rojo con el arreglo ya hecho: lo nombraba **el comentario** que explica por qué ya no se escribe. Es la
       trampa del `replace` que pega en un comentario, esta vez del lado del gate. Se resolvió quitando las líneas que son sólo
       comentario **antes** de canonizar —después no se puede, porque `canonico` colapsa los saltos de línea y un `//` se come el

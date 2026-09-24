@@ -1,6 +1,6 @@
 ---
 type: adr
-title: "ADR-0023 · La máquina de estados son DOS TRAMOS, y cada transición tiene un solo escritor"
+title: "ADR-0024 · La máquina de estados son DOS TRAMOS, y cada transición tiene un solo escritor"
 description: "Cesión y otorgamiento no son lineales: son atributos desacoplados. Y las tres transiciones que se escribían por fuera —girar sin la compuerta de Operaciones, perder sin causa, aceptar por WhatsApp— pasan a decidirse en funciones puras de nivel módulo"
 tags: [adr, etapas, transiciones, curse]
 estado: aceptada
@@ -10,7 +10,7 @@ relacionada: [ADR-0015, ADR-0017, ADR-0018]
 timestamp: 2026-09-23T22:00:00Z
 ---
 
-# ADR-0023 · Dos tramos, y un solo escritor por transición
+# ADR-0024 · Dos tramos, y un solo escritor por transición
 
 ## Contexto
 
@@ -93,5 +93,5 @@ hecho a través de email»*.
 - La regla 26 no se reemplaza: se cumple. Esta ADR no cambia el destino de ninguna transición legítima —
   cambia quién lo decide y qué se registra cuando no lo es.
 
-**Reglas:** 76 (con 1, 5 y 26). **Casos:** 172, 173. **Gates:** `regla_76.test.mjs`, y re-anclados
+**Reglas:** 76 (con 1, 5 y 26). **Casos:** 172, 173. **Gates:** `regla_80.test.mjs`, y re-anclados
 `regla_5`, `regla_48` y `regla_transiciones`.

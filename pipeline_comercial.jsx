@@ -13376,7 +13376,7 @@ function DealDrawer({
           className="rounded-lg px-3 py-2 t12 disabled:opacity-40"
           style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}
         >
-          {/* PERDIDA NO ES UN AVANCE (regla 76). El selector la ofrecía y `moverEtapa` la escribía sin causa,
+          {/* PERDIDA NO ES UN AVANCE (regla 80). El selector la ofrecía y `moverEtapa` la escribía sin causa,
               sin actor y sin etapa de origen — lo que la regla 5 exige desde siempre. Perder es «Rechazar»,
               que pide el motivo de cierre y lo guarda; el menú de acciones ya la excluía y esto lo alinea. */}
           {STAGES.filter((s) => s.id !== deal.stage && s.id !== "aceptadas" && s.id !== "perdida").map((s) => (
@@ -24549,7 +24549,7 @@ function otorgamientoCompleto(deal, estado) {
   if (deal.otorgAuto) return true;
   return v.exc.length > 0 && v.estado === "aprobada";
 }
-// DESPUÉS DEL OTORGAMIENTO SE VA A OPERACIONES, NO A GIRO (regla 76, que cierra el G-24 del proceso de
+// DESPUÉS DEL OTORGAMIENTO SE VA A OPERACIONES, NO A GIRO (regla 80, que cierra el G-24 del proceso de
 // curse). Firmar es del cliente, otorgar es de la casa y GIRAR es de Tesorería: el permiso lo da
 // Operaciones N3 aprobando la integración al core. El avance automático escribía «Girada» directo
 // —`giroPendiente: false`, el dinero dado por transferido— sin pasar nunca por `controlesIntegracion`,
@@ -24588,7 +24588,7 @@ function avanceTrasOtorgamiento(deal, estado) {
 const TRAMO_COMERCIAL = ["prospeccion", "oferta"];
 const TRAMO_POSFIRMA = ["aceptadas", "cesion", "otorgamiento", "giro"];
 const tramoDeEtapa = (s) => (TRAMO_COMERCIAL.includes(s) ? "comercial" : TRAMO_POSFIRMA.includes(s) ? "posfirma" : null);
-// EL CATÁLOGO DE TRANSICIONES MANUALES, CON SUS GUARDAS (regla 76, que cierra el G-25). El «Avanzar a»
+// EL CATÁLOGO DE TRANSICIONES MANUALES, CON SUS GUARDAS (regla 80, que cierra el G-25). El «Avanzar a»
 // del menú y el arrastre del Kanban entran los dos por `moverEtapa`, donde el único control era que el
 // menú filtrara los destinos — la regla 24 otra vez: la pantalla que esconde la acción no es el control.
 // La decisión vive acá, pura y de nivel módulo, por lo mismo que `etapaTrasFirma`: una segunda copia del
@@ -49345,7 +49345,7 @@ export default function PipelineComercial() {
                 detalle: "El «sí» del chat NO es la firma: la operación se acepta firmando en el portal de Factoring Security.",
                 exito: true,
               });
-              // UN «SÍ» EN EL CHAT NO ES UNA FIRMA (regla 76, que cierra el G-26; definición del usuario el
+              // UN «SÍ» EN EL CHAT NO ES UNA FIRMA (regla 80, que cierra el G-26; definición del usuario el
               // 23-09-2026: «WhatsApp lo que hace es enviar un link para que el usuario ingrese a la
               // plataforma y firme la operación tal cual como si el cierre se hubiera hecho a través de
               // email»). Acá se escribía `clienteAcepto: true` con la operación todavía en `oferta`, sin
@@ -49633,7 +49633,7 @@ export default function PipelineComercial() {
     });
   }, [deals]);
   // Avance explícito desde el drawer a una etapa elegida (con la regla de facturas pendientes al aceptar).
-  // LAS GUARDAS NO SE ESCRIBEN ACÁ: las decide `transicionManual`, el catálogo puro (regla 76). Acá queda
+  // LAS GUARDAS NO SE ESCRIBEN ACÁ: las decide `transicionManual`, el catálogo puro (regla 80). Acá queda
   // lo que NO puede ser puro —el invariante OTG-02, que consulta la tabla del contrato; la delegación en
   // `reject`; el log y la auditoría de lo rechazado— y la escritura de lo que el catálogo autorizó.
   // `opts.closeReason` es obligatorio para perder: la causa se ALMACENA siempre, no sólo la transición.
@@ -49665,7 +49665,7 @@ export default function PipelineComercial() {
       return;
     }
     // LA PÉRDIDA LA ESCRIBE `reject` Y NADIE MÁS. Es el único camino que registra causa, etapa de origen,
-    // actor y fecha (regla 5); duplicar el registro acá es exactamente el defecto que la regla 76 cierra.
+    // actor y fecha (regla 5); duplicar el registro acá es exactamente el defecto que la regla 80 cierra.
     if (permiso.delegar === "reject") {
       reject(id, permiso.closeReason, (opts || {}).extra);
       return;
@@ -49766,7 +49766,7 @@ export default function PipelineComercial() {
     });
   };
   // EL ARRASTRE DEL KANBAN ES LA OTRA PUERTA, y pasa por el MISMO catálogo que el «Avanzar a» del detalle
-  // (regla 76). Antes tenía sus propias guardas —«Aceptada», origen perdida, `STAGE_ORDER` hacia atrás—,
+  // (regla 80). Antes tenía sus propias guardas —«Aceptada», origen perdida, `STAGE_ORDER` hacia atrás—,
   // o sea una segunda copia de la misma regla: `moverEtapa` dejó de perder sin causa y arrastrar la tarjeta
   // a la columna Perdida seguía perdiendo sin causa, sin actor y sin etapa de origen. Dos puertas a la misma
   // máquina de estados y sólo una vigilada es el patrón que esta regla cierra.
@@ -50363,7 +50363,7 @@ export default function PipelineComercial() {
           // atajo no miraba el visado: con `otorgAuto` bastaba que no faltaran llamadas para llegar a
           // «Pendiente Integración» con 38 criterios por aprobar —OTG-02 declarado y no obedecido—.
           // Separadas volverían a separarse: lo único que cambia entre las dos es la GLOSA.
-          // UN SOLO SITIO DECIDE (regla 76): `avanceTrasOtorgamiento`, la misma función pura que usa el
+          // UN SOLO SITIO DECIDE (regla 80): `avanceTrasOtorgamiento`, la misma función pura que usa el
           // avance por evento. Escrito dos veces se desfasa —acá el `otorgPorExcepcion` salía de
           // `!otorgAuto` y allá del visado, y eran dos definiciones de lo mismo—, que es el patrón de VER-01.
           const patchOp = avanceTrasOtorgamiento(d);
@@ -51170,7 +51170,7 @@ export default function PipelineComercial() {
       repoGiro.set(id, { ...giroEntregado, congelado: undefined, ts: nowStamp(), por: nom });
       GIRO_STATE = repoGiro.all();
     }
-    // EL ACUMULADO DEL DÍA SE SUMA ACÁ (regla 76). Estaba en el avance automático del otorgamiento, así que
+    // EL ACUMULADO DEL DÍA SE SUMA ACÁ (regla 80). Estaba en el avance automático del otorgamiento, así que
     // los indicadores —Giro, Cursadas, Venta girada— contaban como girada una operación que todavía estaba
     // esperando a Operaciones: la misma mentira del `stage`, esta vez por el lado del KPI. Éste es el punto
     // en que la casa autoriza que el dinero salga. Cuando el aviso de Tesorería esté modelado (G-28), el
@@ -52111,7 +52111,7 @@ export default function PipelineComercial() {
   // pendientes SALE DEL TUBO y queda **Pendiente Integración**. No gira: girar es el último paso y lo
   // autoriza Operaciones N3 desde el detalle (`aprobarIntegracion`), que es donde viven GIR-02, LIN-01 y
   // la atribución. Hasta el 23-09-2026 esto escribía «Girada» directo con `giroPendiente: false` —el
-  // dinero dado por transferido— y por ahí se cursaba sin ninguna de las tres compuertas (regla 76).
+  // dinero dado por transferido— y por ahí se cursaba sin ninguna de las tres compuertas (regla 80).
   // QUIÉN DECIDE es `avanceTrasOtorgamiento`, puro y de nivel módulo: acá sólo se escribe lo que devuelve.
   // El acumulado del día ya NO se toca acá —una operación esperando a Operaciones no es venta girada, y
   // contarla ahí era la misma mentira por el lado del KPI—: lo suma `aprobarIntegracion`.

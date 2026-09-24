@@ -8545,7 +8545,7 @@
        + ` · VER-01 ${ver01Ok}${ver01Err ? " (" + ver01Err + ")" : ""} · candidata «${cand.label}» ${candOk} · aviso «${avisoDet}» ${avisoOk} · asunto de la llamada intacto ${asuntoOk}`);
   }
 
-  // 172 · EL CATÁLOGO DE TRANSICIONES MANUALES (regla 76, G-25). `moverEtapa` tenía guardas —perdida
+  // 172 · EL CATÁLOGO DE TRANSICIONES MANUALES (regla 80, G-25). `moverEtapa` tenía guardas —perdida
   // terminal, «Aceptada» y giro bloqueados, OTG-02 por su código— y aun así dejaba tres agujeros: perder
   // sin causa, pasar a cesión sin `integracion` (la operación se rotulaba «Aceptada» y no aparecía en
   // Operaciones: invisible, no bloqueada) y retroceder de etapa conservando la firma.
@@ -8598,7 +8598,7 @@
        `causa ${causaOk} (sin causa «${sinCausa.codigo}» · con causa delega ${conCausa.delegar}) · cesión ${cesionOk} (integracion «${aCesion.patch && aCesion.patch.integracion}» · estado «${estadoOperacion({ ...enOtorg, ...aCesion.patch })}») · destinos ${destinosOk} (aceptadas ${aAceptadas.codigo} · giro ${aGiro.codigo}) · orden ${ordenOk} (atrás ${atras.codigo}) · terminal ${terminalOk} · puro ${puroOk}`);
   }
 
-  // 173 · TRAS EL OTORGAMIENTO SE VA A OPERACIONES, NO A GIRO (regla 76, G-24). El avance automático
+  // 173 · TRAS EL OTORGAMIENTO SE VA A OPERACIONES, NO A GIRO (regla 80, G-24). El avance automático
   // escribía «Girada» directo, con `giroPendiente: false` y el dinero dado por transferido, sin pasar por
   // `controlesIntegracion`: se saltaba VER-01, LIN-01 y GIR-02. Es el mismo salto que la regla 26 cerró en
   // `etapaTrasFirma` y que volvió por la otra puerta, porque el efecto decidía de nuevo por su cuenta.

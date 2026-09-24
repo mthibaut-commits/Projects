@@ -6,7 +6,7 @@ tags: [sesion, etapas, transiciones, curse, gates]
 timestamp: 2026-09-23T23:30:00Z
 ---
 
-# Nadie escribe una transición ajena · regla 76, ADR-0023
+# Nadie escribe una transición ajena · regla 80, ADR-0024
 
 ## Qué pidió el usuario
 
@@ -93,7 +93,7 @@ misma pantalla era el síntoma a la vista.
 
 ## Tres cosas que aprendieron los gates
 
-**1 · Un gate de texto tiene que mirar el CÓDIGO, no el texto.** `regla_76` prohibía el identificador
+**1 · Un gate de texto tiene que mirar el CÓDIGO, no el texto.** `regla_80` prohibía el identificador
 `clienteAcepto` dentro del intent y se puso rojo **con el arreglo ya hecho**: lo nombraba el COMENTARIO que
 explica por qué ya no se escribe. Es la trampa del `replace` que pega en un comentario, esta vez del lado del
 gate. Se quitan las líneas que son sólo comentario **antes** de canonizar —después no se puede, porque

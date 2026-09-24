@@ -1,4 +1,4 @@
-/* REGLA 76 · NADIE ESCRIBE UNA TRANSICIÓN QUE NO LE CORRESPONDE.
+/* REGLA 80 · NADIE ESCRIBE UNA TRANSICIÓN QUE NO LE CORRESPONDE.
  *
  * Tres agujeros de la misma máquina de estados, medidos el 23-09-2026 sobre el proceso de curse
  * (`Regresiones/Gaps_Proceso_Curse_2026-09-22.md`, G-24 · G-25 · G-26) y decididos por el usuario:
@@ -62,7 +62,7 @@ export const sinComentarios = (texto) =>
 
 /* Las cuatro exigencias de la regla, sobre el CÓDIGO del fuente en forma canónica (ADR-0006).
    Devuelve la lista de FALLAS: vacía = cumple. */
-export function auditarRegla76(fuente) {
+export function auditarRegla80(fuente) {
   const src = canonico(sinComentarios(fuente));
   const f = [];
 
@@ -111,8 +111,8 @@ export function auditarRegla76(fuente) {
   return f;
 }
 
-test("regla 76 · el fuente cumple las cuatro exigencias", () => {
-  const fallas = auditarRegla76(SRC);
+test("regla 80 · el fuente cumple las cuatro exigencias", () => {
+  const fallas = auditarRegla80(SRC);
   assert.deepEqual(fallas, [], "FALLA:\n  - " + fallas.join("\n  - "));
 });
 
@@ -120,7 +120,7 @@ test("sonda negativa: un segundo escritor de `stage: \"giro\"` se caza", () => {
   const plantado = SRC.replace('status: "Pendiente Integración', 'stage: "giro", status: "Pendiente Integración');
   assert.notEqual(plantado, SRC, "la sonda no plantó nada: el ancla cambió");
   assert.ok(
-    auditarRegla76(plantado).some((x) => /EXACTAMENTE 1/.test(x)),
+    auditarRegla80(plantado).some((x) => /EXACTAMENTE 1/.test(x)),
     "un segundo escritor de la etapa de giro tiene que romper el gate",
   );
 });
@@ -129,7 +129,7 @@ test("sonda negativa: `avanceTrasOtorgamiento` sin `integracion` se caza", () =>
   const plantado = SRC.replace(/(function avanceTrasOtorgamiento\([^)]*\) \{[\s\S]*?)integracion: "pendiente",/, "$1");
   assert.notEqual(plantado, SRC, "la sonda no plantó nada: el ancla cambió");
   assert.ok(
-    auditarRegla76(plantado).some((x) => /no deja `integracion/.test(x)),
+    auditarRegla80(plantado).some((x) => /no deja `integracion/.test(x)),
     "dejar la operación sin marcar Pendiente Integración tiene que romper el gate",
   );
 });
@@ -139,7 +139,7 @@ test("sonda negativa: `transicionManual` que no nombra la causa se caza", () => 
   assert.notEqual(cuerpo, "", "no se encuentra `transicionManual`");
   const plantado = SRC.replace(cuerpo, cuerpo.replace(/causa/g, "motivo_"));
   assert.ok(
-    auditarRegla76(plantado).some((x) => /no nombra la causa/.test(x)),
+    auditarRegla80(plantado).some((x) => /no nombra la causa/.test(x)),
     "un catálogo que deja perder sin causa tiene que romper el gate",
   );
 });
@@ -149,7 +149,7 @@ test("sonda negativa: el arrastre del Kanban que vuelve a decidir por su cuenta 
   assert.notEqual(cuerpo, "", "no se encuentra `moveTo`");
   const plantado = SRC.replace(cuerpo, cuerpo.replace(/transicionManual\(/g, "decidirAcá("));
   assert.ok(
-    auditarRegla76(plantado).some((x) => /`moveTo` no consulta `transicionManual`/.test(x)),
+    auditarRegla80(plantado).some((x) => /`moveTo` no consulta `transicionManual`/.test(x)),
     "arrastrar a la columna Perdida sin pasar por el catálogo tiene que romper el gate",
   );
 });
@@ -159,7 +159,7 @@ test("sonda negativa: `moverEtapa` que vuelve a decidir por su cuenta se caza", 
   assert.notEqual(cuerpo, "", "no se encuentra `moverEtapa`");
   const plantado = SRC.replace(cuerpo, cuerpo.replace(/transicionManual\(/g, "decidirAcá("));
   assert.ok(
-    auditarRegla76(plantado).some((x) => /no consulta `transicionManual`/.test(x)),
+    auditarRegla80(plantado).some((x) => /no consulta `transicionManual`/.test(x)),
     "un `moverEtapa` que no pasa por el catálogo tiene que romper el gate",
   );
 });
@@ -169,7 +169,7 @@ test("sonda negativa: el intent `cursar` que da por firmada la operación se caz
   assert.notEqual(cuerpo, "", "no se encuentra el intent `cursar`");
   const plantado = SRC.replace(cuerpo, cuerpo.replace("cierreEnviado: true", "clienteAcepto: true, cierreEnviado: true"));
   assert.ok(
-    auditarRegla76(plantado).some((x) => /el intent `cursar` escribe `clienteAcepto`/.test(x)),
+    auditarRegla80(plantado).some((x) => /el intent `cursar` escribe `clienteAcepto`/.test(x)),
     "un «sí» de WhatsApp que vale como firma tiene que romper el gate",
   );
 });
@@ -179,7 +179,7 @@ test("sonda negativa: `transicionManual` que lee el estado del componente se caz
   assert.notEqual(cuerpo, "", "no se encuentra `transicionManual`");
   const plantado = SRC.replace(cuerpo, cuerpo.replace("{", "{ const d0 = dealsRef.current;"));
   assert.ok(
-    auditarRegla76(plantado).some((x) => /no es pura/.test(x)),
+    auditarRegla80(plantado).some((x) => /no es pura/.test(x)),
     "un catálogo que se acopla al componente tiene que romper el gate",
   );
 });
