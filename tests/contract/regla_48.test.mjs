@@ -44,9 +44,17 @@ export function auditarRegla48(src) {
   else if (iAtajo >= 0 && iAtajo < iGuarda)
     fallos.push("`otorgamientoCompleto` consulta el atajo ANTES de OTG-02: para entonces ya devolvió `true` con el otorgamiento sin hacer");
   // 3 · UNA SOLA RAMA en el avance. La del atajo miraba sólo las llamadas y por ahí se colaba.
-  if (!/if \(otorgamientoCompleto\(d\) && verifResumenDeal\(d\)\.pend === 0\) \{/.test(src))
-    fallos.push("el avance periódico no exige `otorgamientoCompleto` junto con la verificación: son las dos compuertas, OTG-02 y VER-01");
-  if (/if \(d\.otorgAuto\) \{\s*\n\s*if \(verifResumenDeal\(d\)\.pend > 0\) return d;/.test(src))
+  const ato = cuerpoDe(src, "avanceTrasOtorgamiento");
+  if (!ato) fallos.push("no existe `function avanceTrasOtorgamiento`: las dos compuertas volvieron a vivir dentro de un handler");
+  else {
+    if (!/otorgamientoCompleto\(deal, estado\)/.test(ato))
+      fallos.push("`avanceTrasOtorgamiento` no exige `otorgamientoCompleto`: es la compuerta OTG-02 y sin ella el atajo vuelve a ganar");
+    if (!/verifResumenDeal\(deal, estado\)\.pend > 0/.test(ato))
+      fallos.push("`avanceTrasOtorgamiento` no exige la verificación: son las dos compuertas, OTG-02 y VER-01");
+  }
+  if ((src.match(/avanceTrasOtorgamiento\(/g) || []).length < 3)
+    fallos.push("alguno de los dos avances —el periódico y el por evento— volvió a decidir por su cuenta en vez de preguntarle a `avanceTrasOtorgamiento`");
+  if (/if \(d\.otorgAuto\) \{\s*\n\s*if \(verifResumenDeal\(d\)\.pend > 0\) return d;/.test(src) || (ato && /otorgAuto[^;]*verifResumenDeal\(deal, estado\)\.pend > 0/.test(ato)))
     fallos.push("volvió la rama aparte del otorgamiento automático, que avanza mirando sólo las llamadas: es el camino por el que 38 criterios sin aprobar llegaban a «Pendiente Integración»");
   // 4 · La pantalla: el cartel verde sólo con el atajo vigente, y los criterios cuando no lo está.
   if (!/\{tab === "otorgamiento" && otorgAutoVigente\(deal\) && \(/.test(src))
@@ -81,8 +89,8 @@ const MUTANTES = {
     re: /lee `VISADO_STATE`/,
   },
   "vuelve la rama aparte del automático": {
-    src: jsx.replace("          if (otorgamientoCompleto(d) && verifResumenDeal(d).pend === 0) {",
-                     "          if (d.otorgAuto) {\n            if (verifResumenDeal(d).pend > 0) return d;\n          }\n          if (otorgamientoCompleto(d) && verifResumenDeal(d).pend === 0) {"),
+    src: jsx.replace("  if (verifResumenDeal(deal, estado).pend > 0) return null;",
+                     "  if (deal.otorgAuto && verifResumenDeal(deal, estado).pend > 0) return null;"),
     re: /volvió la rama aparte del otorgamiento automático/,
   },
   "el cartel verde vuelve a mirar sólo la bandera": {

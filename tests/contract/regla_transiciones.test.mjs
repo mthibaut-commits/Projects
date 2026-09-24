@@ -27,7 +27,11 @@ const entre = (src, desde, hasta) => {
 };
 
 /* El handler `moverEtapa` hasta su `setDeals(`: todo control tiene que vivir acá adentro. */
-export const cabezaMoverEtapa = (src) => entre(canonico(src), "const moverEtapa = (id, stageId) => {", "setDeals((prev) => {");
+export const cabezaMoverEtapa = (src) => entre(canonico(src), "const moverEtapa = (id, stageId, opts) => {", "setDeals((prev) => {");
+
+/* El catálogo PURO al que `moverEtapa` le pregunta desde la regla 80. Las guardas que antes estaban
+   escritas en el handler viven acá, y es acá donde hay que exigirlas: el handler puede reescribirse. */
+export const catalogoTransiciones = (src) => entre(canonico(src), "function transicionManual(deal, stageId, opts) {", "// LA ASIGNACIÓN DE LÍNEA");
 
 export function auditarTransiciones(src0) {
   const src = canonico(src0);
@@ -71,9 +75,14 @@ export function auditarTransiciones(src0) {
   // la integración al core —eso inyecta la operación en TESORERÍA— y Tesorería gira. Así que `moverEtapa`
   // no rechaza ni audita nada sobre el giro: la transición NO EXISTE, igual que «Aceptada», que la fija el
   // cliente al firmar. Un rechazo acá sería NEX controlando algo que no le toca.
-  if (!/if \(stageId === "giro"\) return;/.test(cab))
-    fallos.push("`moverEtapa` sigue tratando «giro» como una transición manual: no lo es — lo autoriza Operaciones al integrar y lo ejecuta Tesorería");
-  if (/invarianteCumple\("GIR-0[12]"/.test(cab) || /Avance a Giro bloqueado|Transición bloqueada \(GIR-01\)/.test(cab))
+  const cat = catalogoTransiciones(src);
+  if (!cat) fallos.push("no encuentro el catálogo puro `transicionManual`: las guardas volvieron a vivir dentro del handler");
+  else if (!/if \(stageId === "giro"\) return \{ok: false, codigo: "GIR-01"/.test(cat))
+    fallos.push("`transicionManual` sigue tratando «giro» como una transición manual: no lo es — lo autoriza Operaciones al integrar y lo ejecuta Tesorería");
+  if (!/permiso\.codigo !== "GIR-01"/.test(cab))
+    fallos.push("`moverEtapa` AUDITA el rechazo de «giro»: acá no se rechaza ni se audita nada sobre el giro, el control es del otro sistema (19-09-2026)");
+  const dondeGiro = cab + " " + (cat || "");
+  if (/invarianteCumple\("GIR-0[12]"/.test(dondeGiro) || /Avance a Giro bloqueado|Transición bloqueada \(GIR-01\)/.test(dondeGiro))
     fallos.push("`moverEtapa` vuelve a RECHAZAR una transición a giro: el control es del otro sistema, acá la acción simplemente no existe");
   // Y el menú no lo ofrece — pero NO en silencio: la regla 24 exige que el destino se muestre apagado con
   // el motivo, porque desaparecer sin explicación deja al ejecutivo sin dónde enterarse.
@@ -112,10 +121,11 @@ test("SONDAS: cada violación plantada en una copia del fuente hace fallar al au
       can.replace('invarianteCumple("OTG-02", "oportunidad.avanzarEtapa"', 'noop("OTG-02", "oportunidad.avanzarEtapa"'),
       /no comprueba OTG-02/,
     ],
-    ["«giro» vuelve a ser una transición manual", can.replace('if (stageId === "giro") return;', ""), /sigue tratando «giro» como una transición manual/],
+    ["«giro» vuelve a ser una transición manual", can.replace('if (stageId === "giro") return {ok: false, codigo: "GIR-01"', 'if (false) return {ok: false, codigo: "GIR-01"'), /sigue tratando «giro» como una transición manual/],
+    ["`moverEtapa` audita el rechazo del giro", can.replace('permiso.codigo !== "GIR-01"', 'true'), /AUDITA el rechazo de «giro»/],
     [
       "NEX vuelve a rechazar una transición a giro",
-      can.replace('if (stageId === "giro") return;', 'if (stageId === "giro") {invarianteCumple("GIR-01", "oportunidad.girar", {deal: null}); return;}'),
+      can.replace('if (stageId === "giro") return {ok: false, codigo: "GIR-01"', 'if (stageId === "giro") return invarianteCumple("GIR-01", "oportunidad.girar", {deal: null}) && {ok: false, codigo: "GIR-01"'),
       /vuelve a RECHAZAR una transición a giro/,
     ],
     [
