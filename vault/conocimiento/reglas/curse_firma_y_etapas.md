@@ -10,7 +10,7 @@ timestamp: 2026-09-17T15:29:14Z
 
 > Reglas de dominio de NEX, **verbatim** desde el `CLAUDE.md` anterior al 17-09-2026, agrupadas por tema. Se citan por su número (`regla 1`) y **no se renumeran**: el fuente y otros documentos las referencian así. Índice de todas, con qué caso de la suite verifica cada una: [`invariantes.md`](../invariantes.md).
 >
-> Reglas en este archivo: **1** · **5** · **12-bis** · **23** · **26** · **28** · **30** · **24** · **30-bis** · **33**.
+> Reglas en este archivo: **1** · **5** · **12-bis** · **23** · **26** · **28** · **30** · **24** · **30-bis** · **33** · **41** · **43** · **55** · **58** · **66** · **78**.
 
 1. **Curse nunca por email:** el cliente acepta SOLO firmando en el portal (factoringsecurity.cl/curse). El ejecutivo no puede mover a Aceptada (bloqueado en drag y selector). Al enviar el enlace de cierre por **Email**, `enviarCierre` abre una **pestaña nueva** (blob URL vía `emailCierreHTML(deal)`, como el WhatsApp del cliente): página standalone con branding Factoring Security verde `#0a7d3f` — vista email → CTA "Revisar y firmar" → login → detalle → firma. Al firmar hace `window.opener.postMessage({type:'aceptada', neg})`, que el listener de mensajes del panel ya maneja (llama `confirmarCierre` → la operación avanza a Cesión/Giro). No es modal in-app.
    - **Reabrir REVOCA la firma.** «Editar la oferta» (menú Acciones; hasta el 17-09-2026 se llamaba «Reabrir para modificar» y sólo existía en Aceptada y Cesión — girada no se reabre, ni la que Operaciones ya integró al core) devuelve la operación a Oferta para agregar o quitar facturas. Desde el 17-09-2026 la misma puerta sirve para la oferta **cerrada y todavía sin firmar** (regla 33): ahí no hay firma que revocar y `reabierta` **no se pone**. Mientras `deal.reabierta` esté puesta, `aprobacionFormalCliente` devuelve **false**: el cliente firmó un paquete y un monto concretos y, si eso cambia, lo firmado ya no describe lo que se va a cursar. Se corta en el gate y no limpiando banderas una por una, porque olvidar una dejaría girar sin aceptación vigente. Volver a firmar limpia `reabierta`.
@@ -20,6 +20,7 @@ timestamp: 2026-09-17T15:29:14Z
 
 5. **Pérdida es estado terminal** (spec Perdida v1.0): causa específica siempre (`causaPerdidaDeal`, nunca el genérico), etapa de origen, actor, cierre de tareas en cascada, badges accionables suprimidos. Reapertura = operación nueva con referencia.
     - **AMPLIACIÓN del 23-09-2026 (ADR-0015, regla 69):** la causa **«Línea rechazada por el comité»** (`committee_reject`, en `CLOSE_REASONS`) es la de la operación cuyo único deudor tenía la línea puntual que el comité rechazó: no queda factura que reabrir, así que se pierde por el mismo camino (`reject`) y con la causa específica, como esta regla pide.
+    - **AMPLIACIÓN del 23-09-2026 (ADR-0023, regla 78):** la pérdida **por cesión a la competencia** es un hecho del A2 y no un sorteo: se pierde la oferta entera sólo si otro factoring se llevó todas sus facturas, y la causa nombra a ese factoring y a sus folios. Una causa sorteada no es específica: es falsa.
 
 12-bis. **Lo que saca una oportunidad de Prospección es la SIMULACIÓN** (14-09-2026). «Oferta y Negociación» significa que hay una oferta que negociar, y una oferta sin precio no es una oferta: la tarjeta lo desmentía en la columna de al lado —«Sin simular»— mientras la etapa afirmaba lo contrario. Antes promovía cualquier **edición** del paquete (`stageTrasEdicion`, que corría al incorporar, retirar o actualizar facturas), así que una oportunidad que el inbound detectó y que alguien apenas tocó ya figuraba en negociación con el cliente, sin tasa, sin plazo y sin monto a girar. Ahora la promoción vive en `simularOferta` y viaja **dentro del patch**, no fuera: el detalle está en otra pestaña y el tubo se entera por ese mismo mensaje — fuera del patch la etapa quedaba avanzada en el detalle y en Prospección en el tubo. Hay además un **invariante dual** del que ya existía: si el que había corrige «prospección con oferta publicada → oferta», el nuevo corrige «oferta sin simular → prospección». Se exceptúa lo que YA tiene oferta (número de negocio o la oferta enviada por WhatsApp): eso sí está en negociación aunque su simulación se haya limpiado, que es el caso de una **reapertura**. Con esa guarda los dos son duales exactos y no pueden empujarse uno al otro.
     - **De paso, una trampa de las capturas.** `capturar_pantallas.mjs` esperaba `/Monto|Facturas|Oferta/` para dar por montado el detalle, y las tres palabras sólo aparecen con la operación en «Oferta y Negociación». Con todo en Prospección la captura moría por timeout a los 5 minutos, **como si la app estuviera rota**: el detalle cargaba perfecto y sin un solo error de página. La señal de que una pantalla montó tiene que valer en cualquier estado — ahora es el título, `DETALLE DE OPORTUNIDAD`.
@@ -182,3 +183,24 @@ timestamp: 2026-09-17T15:29:14Z
       justificación que vacía la cuenta) y `regla_66.test.mjs` (la llamada en `cerrarOferta`, el rechazo en
       `solicitarAprobacionExc` y la declaración en `enviarPreEval`, cada uno con sonda).
 
+78. **LA PÉRDIDA POR CESIÓN A LA COMPETENCIA ES UN HECHO DEL A2, NO UN SORTEO** (23-09-2026, ADR-0023; hallazgo 8 de la
+    revisión de Reportes). `evaluarPerdidas` —lo único que el cron corre para detectar pérdidas— perdía el 12 % de las
+    oportunidades de un cedente que ALGUNA VEZ cedió afuera con `rndDetBool(aec|id, 0.12)`, sin mirar sus facturas, y
+    escribía la causa como si fuera un hecho («AECSync: las facturas fueron financiadas por X»). La versión que sí las
+    miraba vivía en `avanzarPipeline`, un motor por timer que nadie invoca.
+    - **La decisión es pura y de nivel módulo** (`perdidaPorCesion(deal, ced = cesionesAjenasDeDeal(deal))`): la oferta
+      se pierde **entera** sólo si otro factoring ya se llevó **todas** sus facturas —no queda nada que comprar—, con ese
+      factoring (`cedidaCompetidor`) y sus folios en la traza. Si se llevó **una parte**, no se pierde: se anota cuántas
+      (`cedidasOtro`) y a quién, y la oferta sigue con el resto. Lo cedido a Security es cartera propia y no cuenta. Sin
+      facturas en la oferta, sin cedente o sin cesiones, no hay pérdida.
+    - **`evaluarPerdidas` decide con ella**, una sola vez por oportunidad (`cesionEval`) y en las mismas etapas
+      (Prospección, Oferta, Aceptada). Ya no nombra al competidor por el historial del cedente ni por hash: lo nombra el
+      registro de las facturas de la oferta.
+    - **`avanzarPipeline` sigue en el fuente, y es una decisión pendiente, no un olvido.** Retirarlo tumba el gate de la
+      regla 48: la rama «otorgamiento → Pendiente Integración» sólo existe en ese código muerto, y lo que corre es un
+      efecto que manda la operación a «Girada» sin mirar VER-01 ni pasar por «Pendiente Integración» (reglas 26 y 43).
+      Está en el tablero.
+    - Caso **174** (sobre cesiones reales del A2: toda cedida se pierde con su factoring y sus folios; una de dos se anota
+      sin perder; lo nuestro, lo libre, la oferta vacía y el deal sin cedente no pierden; otro id da la misma decisión) y
+      `regla_78.test.mjs` (la decisión de nivel módulo apoyada en el A2, el cron que la usa y anota la parcial, y ningún
+      sorteo ni competidor por hash dentro de `evaluarPerdidas`; con sondas).

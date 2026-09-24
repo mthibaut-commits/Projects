@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-23T22:00:00Z
+timestamp: 2026-09-24T01:30:00Z
 ---
 
 # Estado actual
@@ -13,50 +13,42 @@ timestamp: 2026-09-23T22:00:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **171/171 PASA**, **66 archivos de gate de contrato**
-(584 tests), **37 casos e2e** (37/37), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
-(104 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
-gate. La crónica del 17 al 22-09 vive en sus logs — ADR-0001 a 0012, el linter como paso 0-bis, todo lo de
-plata del 20-09 (reglas 41–46, ADR-0007 a 0011, casos 145–151) y, del 21 y 22-09 en sesiones paralelas, las
-reglas 47–52 y 59, el **orden de la carpeta** (`Auditoria/` mide, `Regresiones/` coteja, `Specs_Procesos/`
-en cinco temas; 41 renombres y 63 referencias reparadas), los **entregables versionados** (`Versión N.N.N` +
-anexo, estampada en cada hoja del PDF) y `Casos_de_Prueba/`: **97 casos** sobre las cinco pantallas, 80
-automatizados y **17 manuales**, 7 de ellos en la Mesa de verificación.
+(`pipeline_comercial.jsx`), build standalone, **175/175 PASA**, **69 archivos de gate de contrato**,
+**39 casos e2e** (39/39), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(108 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
+gate. La crónica del 17 al 23-09 vive en sus logs: el backlog decidido del curse (reglas 64–75, ADR-0013 a 0021),
+la plata (60–62), el orden de la carpeta, los entregables versionados y `Casos_de_Prueba/`.
 
-El **23-09**, la plata otra vez en tres reglas: la **60** (el millón es la ÚLTIMA CAPA), la **61** (todo generador
-produce en PESOS: en miles cada monto se cuantiza de a $1.000 y dos entran en criterios que DECIDEN) y la **62**
-(la cartera se LEE: `PC_CLIENTES` sorteaba en una escala sin declarar y cuatro KPI mostraban ~M$5 donde va la
-cartera de 500 clientes; el fallback de 80 empresas se fue y `auditar_unidades` estrena el patrón **(d)** en cero).
+La **noche del 23-09**, la **revisión de Reportes**: diez hallazgos verificados y corregidos en rojo primero. La cartera
+de Cliente y SOW se MIDE (regla 76: «Solo competencia» es SOW 0, el mismo conjunto que «sólo otros» del churn); las
+cifras de operación del Dashboard y de Performance comercial se suman semana a semana del A1 y el A2 con una sola función
+(77); la pérdida por cesión es un hecho del A2 (78, ADR-0023, T1); y el benchmark por deudor cuenta sólo lo que pasó (79).
+Casos 172–175, `e2e-76`/`-77`, `regla_76/77/78.test.mjs` ([log](./2026-09-23_reportes_leen_la_cartera.md)).
 
 > ## 🎯 Siguiente paso
 >
-> 1. **El backlog decidido, en rojo primero** (`Regresiones/Gaps_Proceso_Curse_2026-09-22.md` §2.2; los casos y su
->    orden en `vault/specs/proceso-curse/casos_de_prueba.md`). **Hechos el 23-09** (regla, gate y `CASOS_ESPERADOS` en
->    cada commit): ADR-0013 (un evento, cinco versiones: regla 72, caso 168) · 0014 · 0015 · 0016 · 0017 · 0018 ·
->    0019 · antigüedad ≤20 días · corte y reinicio por hora · M-19 en `cerrarOferta` · M-01 (el acuse del DTE:
->    regla 73, caso 169; el A1 ya lo traía). **El backlog decidido del 22-09 quedó entero**: 18 gaps implementados
->    ([log](./2026-09-23_backlog_decidido.md) §1–§11), con sus pantallas en `28_version_v1.e2e.mjs`. **ADR-0020** (§12): el
->    A1 es un **flujo de eventos por documento** (regla 74, caso 170, `regla_74` + `dtesync.test.mjs`; activo migrado a 55.549
->    eventos, 46 MB). **ADR-0021** (§13): sobre la oferta cerrada, publicada o firmada la NC, el reclamo o la cesión a otro
->    **inhabilitan el documento y dejan la operación no cursable** (regla 75, caso 171; el veto de la regla 71 escrito por el
->    SII; el ejecutivo retira, re-evalúa y vuelve a firmar). Sin decisiones pendientes. Sigue: los T1 sin decisión previa
->    (gaps §2.2: G-05, G-18, G-23 … G-28), cada uno con su caso en rojo.
-> 2. **UI y lo demás**: el selector de sesión 1/3 más angosto con elipsis (desborda a 1366 px) · el chip
+> 1. **Decisión del usuario, T1 — el giro automático se salta VER-01.** Lo que saca hoy una operación de «Otorgamiento»
+>    es un efecto del componente raíz («AVANCE AUTOMÁTICO A GIRO») que, con `otorgamientoCompleto`, la manda a
+>    **«Girada»** sin mirar la verificación y sin pasar por «Pendiente Integración» (reglas 26 y 43). La rama correcta de
+>    la regla 48 (`otorgamientoCompleto(d) && verifResumenDeal(d).pend === 0` → Pendiente Integración) vive SÓLO en
+>    `avanzarPipeline`, código muerto, y el gate `regla_48` vigila ese texto. Propuesta: llevar la rama al efecto vivo
+>    con su caso en rojo, retirar `avanzarPipeline` y re-anclar el gate (ADR-0023 §3).
+> 2. Los T1 sin decisión previa del backlog del curse (gaps §2.2: G-05, G-18, G-23 … G-28), cada uno con su caso en rojo.
+> 3. **UI y lo demás**: el selector de sesión 1/3 más angosto con elipsis (desborda a 1366 px) · el chip
 >    «Negociación» en una operación ya enviada a comité · **join de empresas SIEMPRE por RUT** (8 sitios; T1) ·
 >    `.bat` una vez · regenerar `Capturas_UI/` (deuda 2) · O01 · 28 · 13-quater · `pipeline.zip`.
 
-## En vuelo · nada: TODO lo pendiente está en `main` — backlog de ADR (64–75)
-Las **skills de terceros y los servidores MCP salieron del repo** (ADR-0022, 23-09: «no aportan nada al proyecto
-ya que instalan librerías»); quedan `datamart-ui` y la regla 63 con su gate de paleta. **Antes de modificar se integra
-`main`**: skill `sincronizar-main` + `node sincronizar_main.mjs` (paso 0 del ciclo). Verificar el árbol MEZCLADO y no la rama —y que un paso 0 rojo APAGA el CI entero— subió a
-[`flujo_git.md`](../conocimiento/flujo_git.md) ([log](./2026-09-23_el_paso_0_lleva_tres_commits_en_rojo.md)).
+## En vuelo · nada: la revisión de Reportes (reglas 76–79) entró a `main` el 24-09
+Por `merge --no-ff` de `claude/dreamy-bardeen-n3ekp0`, a pedido del usuario; `main` no se había movido, así que el árbol
+mezclado es el verificado en la rama ([`flujo_git.md`](../conocimiento/flujo_git.md)). **Antes de modificar se integra
+`main`**: skill `sincronizar-main` + `node sincronizar_main.mjs` (paso 0 del ciclo).
 
 ## Bloqueos · del usuario, desde Windows
 
 El relay git bloquea el BORRADO y `refs/tags/*` con **HTTP 403** (los pushes normales funcionan; el MCP tampoco
-expone borrado). Queda **el tag `v0.1.0`** sobre `bd14091`. Las ramas integradas las borró el usuario el 23-09;
-quedan `main`, la de la sesión, `respaldo/main-2026-09-17` (no se toca) y `claude/local-mauricio-20260910`, la
-ÚNICA copia del estado local del 10-09 (`git cherry` la da `+`: borrarla lo pierde).
+expone borrado). Queda **el tag `v0.1.0`** sobre `bd14091`, y por borrar la rama ya integrada
+`claude/dreamy-bardeen-n3ekp0`. Se quedan `main`, `respaldo/main-2026-09-17` (no se toca) y
+`claude/local-mauricio-20260910`, la ÚNICA copia del estado local del 10-09 (`git cherry` la da `+`: borrarla lo pierde).
 
 ## Deudas anotadas (no bloquean, no olvidar)
 1. **Lista Blanca / Deudor Autorizado, decisiones de negocio**: el activo no trae `VIGENTE_DESDE`/`HASTA`/
@@ -69,11 +61,14 @@ quedan `main`, la de la sesión, `respaldo/main-2026-09-17` (no se toca) y `clau
    Directorio (31) · una fila «Sin clasificar» dice «2 deudores» y el desglose suma 0 · dos sitios
    arman un RUT de CLIENTE (`rutDe` de módulo): no llegan al par, y la regla 46 lo dice.
 4. **Dos sesiones paralelas toman el mismo «siguiente entero libre»**, y el turno se pierde MIENTRAS UNO
-   VERIFICA: el 23-09 el mismo bloque se renumeró dos veces (60–71 → 63–74 → 64–75) porque la otra sesión
-   publicó durante los ocho minutos de e2e. Procedimiento y script: [log](./2026-09-23_mezclar_todo_lo_pendiente.md).
-   Al mezclar, `git cherry` y no `--merged`: dice si hay un commit EQUIVALENTE aguas arriba, que es la pregunta.
-5. **Hooks en Windows**: `node verificar_hooks.mjs` una vez · `gitflow_guard.mjs` cree que `git merge-base` integra a `main` (el
-   `\b` de su patrón casa con el guion): usar `git branch -r --merged` · y `invariantes.test.mjs` comprueba
-   que el caso citado EXISTE, no que sea el correcto: cruzar número y título.
+   VERIFICA ([log](./2026-09-23_mezclar_todo_lo_pendiente.md)). Al mezclar, `git cherry` y no `--merged`.
+5. **Hooks en Windows**: `node verificar_hooks.mjs` una vez · `gitflow_guard.mjs` cree que `git merge-base` integra
+   a `main`: usar `git branch -r --merged` · `invariantes.test.mjs` comprueba que el caso citado EXISTE, no que sea el
+   correcto: cruzar número y título.
+6. **Reportes, lo que la revisión no arregló** (medido): los **25 cedentes sin ficha en el A5** que sí ceden a Security
+   figuran «Inactivos»; «Brecha de wallet» multiplica por `COLOC_PROM_12M` (lo nuestro) y no por lo que el cliente cede;
+   «SOW promedio» (30 %) promedia prospectos en 0 al lado del donut (64 %); `COMPETENCIA_POR_RUT` corta el 22-06 y deja
+   fuera **3.352** cesiones del 23-06 (reparto target/resto del churn); `COMPETIDORES` —fallback de `competidorDe`— trae
+   a «Security Factoring» y «Coface Chile»; `dashSerie` fabrica sparklines del Dashboard; el Plan Mensual simula con `pcRng`.
 
-**Conocimiento clave** · [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto en [`vault/index.md`](../index.md) · últimas: [cartera leída](./2026-09-23_cartera_leida_no_inventada.md) · [generadores en pesos](./2026-09-23_generadores_en_pesos.md) · [el millón es la última capa](./2026-09-23_el_millon_es_la_ultima_capa.md) · [el paso 0 en rojo](./2026-09-23_el_paso_0_lleva_tres_commits_en_rojo.md) · [el deudor decide](./2026-09-22_el_deudor_decide_la_factura_se_llama.md)
+**Conocimiento clave** · [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto en [`vault/index.md`](../index.md) · últimas: [Reportes lee la cartera](./2026-09-23_reportes_leen_la_cartera.md) · [cartera leída](./2026-09-23_cartera_leida_no_inventada.md) · [generadores en pesos](./2026-09-23_generadores_en_pesos.md) · [el millón es la última capa](./2026-09-23_el_millon_es_la_ultima_capa.md)
