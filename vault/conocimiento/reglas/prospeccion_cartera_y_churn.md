@@ -228,3 +228,25 @@ timestamp: 2026-09-17T22:12:32Z
     - Caso **178** (la agrupación pura, en las dos direcciones, con el respaldo por nombre, y el desglose que cuadra
       con y sin RUT del cliente) y `regla_81.test.mjs` (la clave por RUT, el `opId` como id, `rutRecep` en el evento, los
       deudores por RUT, la visibilidad por rol y la guarda de `capacidadDeudores`; cada uno con su sonda).
+
+85. **El corte del día lee el estado del PROCESO, no sólo la copia de la pestaña del tubo: la versión emitida es oferta y la
+    pre-evaluación pedida es gestión** (24-09-2026, ADR-0026; reportado por el usuario: «en el detalle de la oportunidad
+    el Subgerente de Riesgo N5 puede aprobar la excepción, pero en el menú Otorgamiento general ese usuario no ve nada»).
+    - **Lo que se midió.** `OP-D32455` reconstruida desde el libro del cliente: 23 documentos, 49 criterios, 17 con la
+      atribución de Paula, cero rechazos firmes y fase «preevaluacion» con la pre-evaluación puesta — la mesa la habría
+      listado. No estaba en `deals`: la simulación se hace en la pestaña del detalle y llega por `nex-simulado`; el corte
+      del día (regla 68) corre cada ~60 s reales en la demo (`cronMs` 3500 × 17 horas), vio la copia del tubo en
+      Prospección sin `simulado`, la eliminó, el aviso se descartó («operación que este tubo ya no tiene») y al reinicio
+      renació como `-R1`. El detalle, la solicitud, la pre-evaluación y el hilo seguían hablando de la anterior.
+    - **Ahora:** `tieneOferta(d)` mira también la versión en `SIM_VERSIONS` (`tieneVersion(d.id)`): la simulación deja
+      una versión en el repositorio (regla 72) y el tubo la relee con el evento `storage` (regla 15-bis-ter), así que el
+      corte sabe que hay oferta aunque el aviso no haya llegado. Y `corteDelDia` decide con `tieneGestion(d)` =
+      `tieneOferta(d) || tienePreEval(d.id)`: pedir la aprobación de una excepción pone la operación en la bandeja sin
+      simular, y eliminarla dejaría a los apoderados visando lo que el tubo no lista. La regla 68 sigue entera: lo que
+      se precisa es de dónde sale «tiene oferta».
+    - **Lo que NO arregla, y se dice:** si el aviso `nex-simulado` se pierde (pestaña del tubo cerrada), la fila del tubo
+      sigue en «Sin gestión» hasta el siguiente aviso — sobrevive al corte, pero no cambia de etapa. Re-hidratar la etapa
+      desde la versión es otro cambio, y toca el dual de la regla 12-bis.
+    - Caso **181** (con versión no se corta; con pre-evaluación no se corta; sin nada sí; limpiando los repositorios vuelve
+      a cortar) y `regla_85.test.mjs` (la versión en `tieneOferta`, la pre-evaluación en `tieneGestion`, el corte con
+      `tieneGestion`; tres sondas).

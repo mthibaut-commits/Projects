@@ -5039,8 +5039,19 @@ function relojSimulado(corridas, cfg) {
 }
 // ¿La oportunidad tiene oferta? El ejecutivo la simuló —etapa Oferta o posterior— o la oferta ya avanzó. Un paquete
 // elegido sin simular sigue en Prospección: no es oferta todavía (regla 12-bis).
-const tieneOferta = (d) => !!d && (!!d.simulado || (d.stage != null && d.stage !== "prospeccion"));
-// EL CORTE, puro: separa lo que se elimina —del inbound y sin oferta— de lo que queda. Conserva el orden y NO muta la
+// Y LA VERSIÓN EMITIDA ES LA OFERTA, ESTÉ O NO EN ESTA COPIA (regla 85, ADR-0026; 24-09-2026, reportado por el usuario:
+// Paula Reyes N5 podía visar en el detalle y la mesa de Otorgamientos le decía 0). La simulación se hace en la pestaña
+// del detalle y llega al tubo por `nex-simulado`; si el corte del día pasa antes —cada ~60 s reales en la demo— la copia
+// del tubo sigue en Prospección sin `simulado`, se elimina, el aviso llega a nadie y al reinicio la operación renace con
+// otro id: el detalle, la solicitud y el hilo hablan de una operación que el tubo ya no tiene. La versión (regla 72) es
+// el hecho del proceso y vive en el repositorio que el tubo relee con el evento `storage`: se lee de ahí.
+const tieneVersion = (id) => !!id && (((typeof SIM_VERSIONS !== "undefined" && SIM_VERSIONS) || {})[id] || []).length > 0;
+const tieneOferta = (d) => !!d && (!!d.simulado || (d.stage != null && d.stage !== "prospeccion") || tieneVersion(d.id));
+// GESTIONADA = con oferta o con la pre-evaluación pedida (regla 85): la solicitud de una excepción pone la operación en
+// la bandeja de otorgamiento (`setPreEval`) aunque el ejecutivo no haya simulado todavía, y eliminarla dejaría a los
+// apoderados visando una operación que el tubo ya no lista.
+const tieneGestion = (d) => tieneOferta(d) || (!!d && typeof tienePreEval === "function" && tienePreEval(d.id));
+// EL CORTE, puro: separa lo que se elimina —del inbound y sin gestión— de lo que queda. Conserva el orden y NO muta la
 // entrada; `gestionadas` cuenta las del inbound que sobreviven, que es la cifra que la bitácora dice.
 function corteDelDia(deals) {
   const eliminadas = [],
@@ -5048,7 +5059,7 @@ function corteDelDia(deals) {
   let gestionadas = 0;
   for (const d of deals || []) {
     if (!d) continue;
-    if (d._inbound && !tieneOferta(d)) eliminadas.push(d);
+    if (d._inbound && !tieneGestion(d)) eliminadas.push(d);
     else {
       quedan.push(d);
       if (d._inbound) gestionadas++;
@@ -6695,6 +6706,43 @@ function candidatasLibro(deal, enOferta) {
   }
   for (const f of reales) out.push({ ...f, diasEmision: f.diasEmision != null ? f.diasEmision : diasDesdeEmision(f) });
   return out.sort((a, b) => (b.folio || 0) - (a.folio || 0));
+}
+// LA OPORTUNIDAD DE UN CLIENTE ES TODO LO QUE SE LE PUEDE OFRECER HOY, Y ES UNA SOLA LISTA (regla 84, 24-09-2026,
+// reportado por el usuario: «en la lista de oportunidades aparecen 3 deudores · 3 facturas, pero al entrar al detalle
+// aparecen muchas más; ¿no deberían coincidir si sumo todos los ítems de la tabla?» — «no puede ser otra fuente si la
+// pantalla de detalle es el detalle de la línea de la tabla»). La fila del tubo dimensionaba la oportunidad con el pool
+// de la operación —lo que el inbound trajo y lo que no cupo— y el arranque del detalle le sumaba el LIBRO del cliente en
+// la ventana del tenant (`candidatasLibro`): 3 contra 23. Desde hoy las dos pantallas leen ESTA lista: la oferta más
+// las candidatas —pool de la operación y libro en ventana—, sin repetir folios, y sólo las BUENAS: lo bloqueado por nota
+// de crédito, reclamo, cesión, veto de la verificación o por estar en otra operación no es oferta posible y no cuenta,
+// que es el mismo filtro del chip «Todo lo disponible». Sin RUT de emisor no hay libro y queda el pool de la operación.
+// La lista se recuerda POR OBJETO de operación (`WeakMap`): el tubo la pide ~100 veces por render y recorrer el libro
+// de cada cliente costaba ~0,5 ms por fila (47 ms por 100, medido el 24-09-2026). El objeto cambia con cada patch —las
+// listas de la operación viven adentro—, y lo de afuera que también decide entra en la clave: el índice de folios en
+// otra operación (`FOLIOS_VER`) y la ventana del libro (`ventanaLibroDias`, política del tenant).
+const _POOL_OPORTUNIDAD = new WeakMap();
+let FOLIOS_VER = 0;
+function poolOportunidad(deal) {
+  if (!deal || deal.agrupado) return [];
+  const firma = FOLIOS_VER + "|" + pol("ventanaLibroDias", 60);
+  const hit = _POOL_OPORTUNIDAD.get(deal);
+  if (hit && hit.firma === firma) return hit.pool;
+  const pool = _poolOportunidadCalc(deal);
+  _POOL_OPORTUNIDAD.set(deal, { firma, pool });
+  return pool;
+}
+function _poolOportunidadCalc(deal) {
+  const oferta = (Array.isArray(deal.facturasOp) ? deal.facturasOp : []).filter(Boolean);
+  const clave = (f) => (f.id != null ? f.id : f.folio);
+  const vistos = new Set();
+  const out = [];
+  for (const f of [...oferta, ...candidatasLibro(deal, oferta)]) {
+    const k = f && clave(f);
+    if (k == null || vistos.has(k)) continue;
+    vistos.add(k);
+    if (estadoCandidata(f, deal).agregable) out.push(f);
+  }
+  return out;
 }
 // Email de cierre SIMULADO como página STANDALONE (se abre en pestaña nueva vía blob URL, igual que el
 // WhatsApp del cliente). Branding Factoring Security. Flujo dentro de la misma pestaña: email → (CTA)
@@ -10841,6 +10889,13 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     const nr = rolDeAreaNivel(x.area, nivelDe(x));
     const otraArea = false; // el área ya la pone la regla: nunca diverge (INC-03 resuelto)
     const tip = `${x.cond} · Tramo ${typeof x.tierIdx === "number" ? x.tierIdx + 1 : "—"}`;
+    // EN ESPERA, ARRIBA A LA DERECHA (24-09-2026, pedido del usuario: «achícala verticalmente, ya que se redistribuyó
+    // el contenido de la última línea»). «En espera del visto bueno de …» iba en una cuarta línea junto al botón
+    // «Agregar información»; ahora ocupa el lado derecho de la cabecera —donde estuvo la píldora— y el botón pasó a
+    // la banda de la solicitud como «Modificar solicitud». La tarjeta pierde una línea. Es la condición de la rama
+    // (C) de abajo: hay solicitud vigente, nadie la visó y quien mira no puede visarla.
+    const solCab = solVigente(SOLICITUD_EXC[deal.id] || {}, x.stKey);
+    const enEspera = x.disp === "excepcion" && !!solCab && excSinVisar(visSt, x.stKey) && !(x.regla && puedeAprobarExc(usuario, x.regla, nivelDe(x)));
     return (
       <div
         key={(kpref || "") + x.n}
@@ -10878,6 +10933,15 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
             >
               {dLbl[x.disp]}
               {x.nivel ? " · N" + x.nivel : ""}
+            </span>
+          )}
+          {enEspera && (
+            <span className="shrink-0 t9" style={{ color: C.sub }}>
+              En espera del visto bueno de{" "}
+              <b style={{ color: "#5B21D6" }}>
+                {nr.rol} (N{nivelDe(x)})
+              </b>
+              .
             </span>
           )}
         </div>
@@ -10941,8 +11005,23 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                   (N5)» junto a un badge que exigía «N4 · Jefe de Riesgo»: dos destinatarios para la misma
                   excepción, y el vigente es el del badge. Esta línea responde quién pidió y cuándo, que es
                   historia y no cambia; a quién le toca lo dice el badge, que se calcula en vivo. */}
-                <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>
-                  📨 Aprobación solicitada por {sol.por} · {sol.fecha}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>
+                    📨 Aprobación solicitada por {sol.por} · {sol.fecha}
+                  </div>
+                  {/* MODIFICAR ABRE EL PANEL LATERAL (24-09-2026, pedido del usuario): sumar un comentario o un
+                      respaldo a la solicitud ya enviada se hace en un panel, no en un formulario embebido que
+                      estiraba la tarjeta. Sólo para quien pidió: el apoderado resuelve, no modifica. */}
+                  {!estado && !puedeVisar && (
+                    <button
+                      onClick={() => setEF("amp:" + x.stKey, { open: true })}
+                      className="shrink-0 t9 font-medium"
+                      style={{ color: C.ink }}
+                      title="Abre el panel lateral para sumar un comentario o un respaldo a la solicitud ya enviada"
+                    >
+                      Modificar solicitud
+                    </button>
+                  )}
                 </div>
                 {sol.comentario && (
                   <div className="mt-0.5 t9" style={{ color: C.sub }}>
@@ -11126,47 +11205,59 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
               const ak = "amp:" + x.stKey;
               const af = excForm[ak] || {};
               const hayAmp = !!((af.msg || "").trim() || (af.archs && af.archs.length));
+              // LA TARJETA TERMINA EN LA BANDA (24-09-2026): el «En espera…» vive en la cabecera y «Modificar
+              // solicitud» en la banda; la ampliación se escribe en un PANEL LATERAL, con el mismo molde que el
+              // editor de reglas y la mesa (regla 53), y se cierra por la X, por Cancelar o clic afuera.
               return (
                 <>
                   {solBlock}
-                  {!af.open ? (
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      <span className="t9" style={{ color: C.sub }}>
-                        En espera del visto bueno de{" "}
-                        <b style={{ color: "#5B21D6" }}>
-                          {nr.rol} (N{nivelDe(x)})
-                        </b>
-                        .
-                      </span>
-                      <button
-                        onClick={() => setEF(ak, { open: true })}
-                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold"
-                        style={{ border: `1px solid ${C.indigo}`, color: C.indigo, backgroundColor: "#fff" }}
+                  {af.open && (
+                    <>
+                      <div className="fixed inset-0 z-40 ovl" onClick={() => setEF(ak, { open: false })} />
+                      <aside
+                        className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col bg-white shadow-2xl"
+                        style={{ borderLeft: `1px solid ${C.line}` }}
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        📎 Agregar información
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="mt-1.5 rounded-md p-2" style={{ border: "1px solid #DDD6FE", backgroundColor: "#F5F3FF" }}>
-                      <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>
-                        Agregar información para el {nr.rol} (N{nivelDe(x)})
-                      </div>
-                      <div className="mt-0.5 t9" style={{ color: C.sub }}>
-                        Se <b>suma</b> a lo ya enviado —no reemplaza la solicitud— y le llega al apoderado con tu nombre y la hora.
-                      </div>
-                      <textarea
-                        value={af.msg || ""}
-                        onChange={(e) => setEF(ak, { msg: e.target.value })}
-                        placeholder="Antecedente, aclaración o descripción del respaldo que adjuntas…"
-                        className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2"
-                        style={{ border: `1px solid ${C.line}`, minHeight: 48, backgroundColor: "#fff", color: C.ink }}
-                      />
-                      {archChips(ak, af.archs)}
-                      <div className="mt-1.5 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-start justify-between p-5" style={{ borderBottom: `1px solid ${C.line}` }}>
+                          <div className="min-w-0 flex-1">
+                            <div className="t11 font-medium" style={{ color: C.faint }}>
+                              #{x.n} · {x.nombre}
+                            </div>
+                            <div className="mt-1 text-xl font-semibold" style={{ color: C.ink }}>
+                              Modificar solicitud
+                            </div>
+                            <div className="mt-1 t10" style={{ color: C.sub }}>
+                              Para el{" "}
+                              <b style={{ color: "#5B21D6" }}>
+                                {nr.rol} (N{nivelDe(x)})
+                              </b>
+                              . Se <b>suma</b> a lo ya enviado —no reemplaza la solicitud— y le llega al apoderado con tu nombre y la hora.
+                            </div>
+                          </div>
+                          <button onClick={() => setEF(ak, { open: false })} className="ml-2 rounded-md p-1 hover:bg-stone-100" title="Cerrar">
+                            <X size={18} style={{ color: C.sub }} />
+                          </button>
+                        </div>
+                        <div className="flex-1 space-y-3 overflow-y-auto p-5">
+                          <div className="rounded-md px-2 py-1.5 t9" style={{ backgroundColor: "#F1ECFF", color: "#5B21D6" }}>
+                            📨 Solicitada por {sol.por} · {sol.fecha}
+                            {sol.comentario ? ` · “${sol.comentario}”` : ""}
+                          </div>
+                          <textarea
+                            value={af.msg || ""}
+                            onChange={(e) => setEF(ak, { msg: e.target.value })}
+                            placeholder="Antecedente, aclaración o descripción del respaldo que adjuntas…"
+                            className="w-full rounded-md p-2 t10 outline-none focus:ring-2"
+                            style={{ border: `1px solid ${C.line}`, minHeight: 120, backgroundColor: "#fff", color: C.ink }}
+                          />
+                          {archChips(ak, af.archs)}
+                          {adjuntarLabel(ak)}
+                        </div>
+                        <div className="flex items-center justify-end gap-1.5 p-5" style={{ borderTop: `1px solid ${C.line}` }}>
                           <button
                             onClick={() => setEF(ak, { open: false, msg: "", archs: [] })}
-                            className="rounded-md px-2 py-1 t9 font-medium"
+                            className="rounded-md px-3 py-1.5 t10 font-medium"
                             style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}
                           >
                             Cancelar
@@ -11180,15 +11271,14 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                             }}
                             disabled={!hayAmp}
                             title={hayAmp ? undefined : "Escribe un comentario o adjunta un respaldo"}
-                            className="inline-flex items-center gap-1 rounded-md px-3 py-1 t9 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ backgroundColor: C.indigo }}
                           >
-                            <Send size={11} /> Enviar
+                            <Send size={12} /> Enviar
                           </button>
                         </div>
-                        {adjuntarLabel(ak)}
-                      </div>
-                    </div>
+                      </aside>
+                    </>
                   )}
                 </>
               );
@@ -16073,22 +16163,11 @@ function DealDrawer({
                         // función es lo que impide que ofrezcan conjuntos distintos con el mismo nombre.
                         const opcionesInicio = (() => {
                           if (deal.simulado) return [];
-                          const norm = (f) => f;
-                          const vistos = new Set();
-                          const pool = [];
-                          validas.forEach((f) => {
-                            if (f && f.id != null && !vistos.has(f.id)) {
-                              vistos.add(f.id);
-                              pool.push(f);
-                            }
-                          });
-                          Object.keys(grpOt).forEach((dn) =>
-                            (grpOt[dn] || []).forEach((f) => {
-                              if (!f || f.id == null || vistos.has(f.id) || !estadoCandidata(f, deal).agregable) return;
-                              vistos.add(f.id);
-                              pool.push(norm(f));
-                            }),
-                          );
+                          // LA MISMA LISTA QUE LA FILA DEL TUBO (regla 84): «Todo lo disponible» es
+                          // `poolOportunidad`, ni más ni menos. Se armaba acá a mano —la oferta válida más lo
+                          // agregable de `grpOt`— y el tubo armaba la suya sin el libro: dos cuentas del mismo
+                          // hecho, y el usuario las sumó.
+                          const pool = poolOportunidad(deal);
                           // PRIME = Lista Blanca o Deudor Autorizado: es la CALIDAD del deudor, no su cupo.
                           const prime = pool.filter((f) => {
                             const td = tipoDeudorDisp(f);
@@ -43013,17 +43092,12 @@ function analisisDeudoresDeDeal(deal) {
   // La OPORTUNIDAD es todo lo que el cliente tiene disponible —lo que ya está en la oferta más lo que
   // el motor encontró y aún no se selecciona—, no sólo la oferta: la oferta es lo que el ejecutivo
   // elige y vive en «Oferta». Por eso una factura que llega actualiza esta columna sola, sin
-  // quedar «sin incorporar». Se deduplica por id porque un documento puede estar en ambas listas.
-  if (!deal.agrupado && ((deal.facturasOp && deal.facturasOp.length) || (deal.facturasDisponibles && deal.facturasDisponibles.length))) {
-    const vistas = new Set();
-    const todas = [];
-    [...(deal.facturasOp || []), ...(deal.facturasDisponibles || [])].forEach((f) => {
-      const k = f && (f.id != null ? f.id : f.folio);
-      if (k == null || vistas.has(k)) return;
-      vistas.add(k);
-      todas.push(f);
-    });
-    return analisisDeudores(todas);
+  // quedar «sin incorporar». Y ES LA MISMA LISTA QUE EL ARRANQUE DEL DETALLE (regla 84): antes se
+  // juntaban acá la oferta y `facturasDisponibles` —sin el libro del cliente, que el detalle sí
+  // ofrece— y la fila decía 3 facturas donde el detalle mostraba 23.
+  if (!deal.agrupado) {
+    const todas = poolOportunidad(deal);
+    if (todas.length) return analisisDeudores(todas);
   }
   // Sin facturas itemizadas el deudor viene sólo con nombre, así que el RUT se resuelve contra los
   // pares del propio cliente. Si no está, queda vacío y la capacidad lo tratará como sin línea:
@@ -49451,6 +49525,7 @@ export default function PipelineComercial() {
       }
     }
     FOLIOS_EN_OPERACION = idx;
+    FOLIOS_VER++; // invalida la memoria de `poolOportunidad`: una candidata puede haber pasado a «en otra operación»
   }, [deals]);
   useEffect(() => {
     const onMsg = (ev) => {
@@ -51196,7 +51271,7 @@ export default function PipelineComercial() {
       logSys(
         "info",
         "cierre-dia",
-        `Corte del día ${nDia} (${cfgT.horaFin}): se elimina ${d.id} · ${d.cliente} · ${d.facturas || 0} doc. · ${fmtMM(d.monto || 0)} · sin oferta`,
+        `Corte del día ${nDia} (${cfgT.horaFin}): se elimina ${d.id} · ${d.cliente} · ${d.facturas || 0} doc. · ${fmtMM(d.monto || 0)} · sin oferta ni pre-evaluación`,
         {
           operacion: d.id,
           cedente: d.cliente,

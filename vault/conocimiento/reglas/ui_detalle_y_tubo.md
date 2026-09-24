@@ -168,3 +168,29 @@ timestamp: 2026-09-17T15:29:14Z
       altura (el menú «Acciones» también mide 39 px).
     - Gate `e2e-82-a`: para cada tab de la tira, el alto del encabezado pegajoso y el `top` del cuerpo son los mismos,
       y el `scrollbar-gutter` calculado del documento es `stable`.
+
+84. **La oportunidad es UNA sola lista, y la fila del tubo y el detalle la cuentan igual** (24-09-2026, reportado por el
+    usuario mirando el tubo: «en la lista de oportunidades aparecen 3 deudores · 3 facturas, pero al entrar al detalle
+    aparecen muchas más; ¿no deberían coincidir si sumo todos los ítems de la tabla?», «al menos coincidir el número de
+    buenas facturas», «no puede ser otra fuente si la pantalla de detalle es el detalle de la línea de la tabla»).
+    - **Lo que pasaba.** La columna «Oportunidad» del tubo (`analisisDeudoresDeDeal`) juntaba la oferta y
+      `facturasDisponibles` —lo que el inbound trajo, lo que no cupo y los deudores «Otro»— y el arranque del detalle
+      («¿Qué facturas quieres incluir en la oferta?») le sumaba el **libro de ventas del cliente en la ventana del tenant**
+      (`candidatasLibro`, `ventanaLibroDias`), que es de donde salen las otras veinte. Dos cuentas del mismo hecho, y el
+      usuario las sumó: 3 contra 23.
+    - **Ahora:** `poolOportunidad(deal)` es la única lista —la oferta más las candidatas del pool de la operación y del
+      libro en ventana, sin repetir folios, y sólo las **buenas**: lo bloqueado por nota de crédito, reclamo, cesión, veto
+      de la verificación o por estar en otra operación no es oferta posible y no cuenta (el filtro es `estadoCandidata`,
+      el mismo del chip «Todo lo disponible»)—. La fila del tubo la analiza (`analisisDeudoresDeDeal`) y el arranque del
+      detalle la parte en sus tres chips (regla 13-septies). El «N facturas · M$» de la fila es exactamente el «Todo lo
+      disponible · N fact. · M$» del detalle. Sin RUT de emisor no hay libro y queda el pool de la operación; sin
+      documentos, la fila sigue leyendo `deal.deudores` (prospección temprana).
+    - **Lo que NO cambia, y se dice:** `deal.facturas` y `deal.monto` siguen siendo lo que el inbound trajo (o la oferta
+      cuando existe) y los siguen leyendo el embudo y los KPI; la fila y el detalle no los usan para esta cuenta. Si el KPI
+      del tubo debe sumar la oportunidad completa, es una decisión aparte.
+    - **Alternativas descartadas.** Que el detalle deje de ofrecer el libro: el libro es el hecho del SII y desde que
+      `candidatasLibro` lo lee del archivo es la fuente de «Deudores disponibles». Que el tubo lea `deal.facturas`: es la
+      cifra que el inbound trajo, no lo que hoy se puede ofrecer, y cambia sola cuando llega el siguiente documento.
+    - Caso **180** (sobre un emisor real del libro: sin duplicados, sólo agregables, la fila cuenta la misma lista, la
+      bloqueada no cuenta, la que ya está en la oferta no se duplica, la nueva del pool suma) y `e2e-84-a` (la fila 0 del
+      tubo y el chip «Todo lo disponible» del detalle de esa misma fila dicen las mismas facturas y el mismo monto).
