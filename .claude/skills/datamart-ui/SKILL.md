@@ -52,6 +52,8 @@ Use when: user mentions Next.js, `.tsx`, VSCode, component files, or NEX Backoff
 - **One primary CTA per screen** — the rest use outline, ghost, or secondary variants
 - **Progressive disclosure** — show only what's needed; details behind click/expand
 - **4 data states always** — Empty, Loading, Error, Populated (see `ux-principles.md`)
+- **Don't invent a primitive** — if the pattern is a menu, overlay, table, calendar or sidebar,
+  it's already specced in `components-extended.md` (§34–§49). Check there before writing raw HTML.
 
 ---
 
@@ -79,8 +81,9 @@ Configured automatically by `npx shadcn@latest init --preset luma`. No action ne
 | `references/shadcn-theme.md` | **Always** — full CSS (light+dark), Tailwind boilerplate, Luma patterns |
 | `references/ux-principles.md` | Planning layout, navigation, data states, information density |
 | `references/design-tokens.md` | Verifying exact Datamart color/spacing values |
-| `references/components.md` | Building Datamart-specific patterns (badges, detail cards, timeline) |
+| `references/components.md` | Building Datamart-specific patterns (badges, detail cards, timeline) — §1–§33 |
 | `references/screen-patterns.md` | Building a full page layout |
+| `references/components-extended.md` | Menus, overlays, tables, sidebar — shadcn primitives with no base pattern (§34–§49) |
 
 ---
 
@@ -114,6 +117,10 @@ Configured automatically by `npx shadcn@latest init --preset luma`. No action ne
 - [ ] All 4 data states handled (Empty, Skeleton, Error, Populated)
 - [ ] Destructive actions: confirmation dialog — never single-click delete
 - [ ] Breadcrumb on level 3+ screens
+- [ ] Kebab button (§6) always paired with its menu panel (§34) — never a dead trigger
+- [ ] Lists past ~9 rows: pagination (§47) or command search (§38) — never an endless scroll
+- [ ] Spinner (§43) inline or in-button only; page-level loading uses Skeleton
+- [ ] Bulk-action bar (§48) appears only when rows are selected
 
 **Track B (React):**
 - [ ] Only `@/components/ui/*` imports — no raw HTML where shadcn components exist
@@ -126,3 +133,6 @@ Configured automatically by `npx shadcn@latest init --preset luma`. No action ne
 - [ ] `<AlertDialog>` for any destructive confirmation
 - [ ] `toast` (Sonner) for success — not `<Alert>`
 - [ ] `<FieldError>` for form validation — not toast
+- [ ] `<Sheet>` for contextual detail; a new route + `<Breadcrumb>` when the detail deserves a URL
+- [ ] `<Switch>` for instant-apply settings; `<Checkbox>` when a Save button commits the change
+- [ ] `<Progress>` thresholds: primary → warning over 80% → destructive over 95%
