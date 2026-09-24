@@ -4472,6 +4472,7 @@ function streamDesdeDTE(dte) {
       tipo: "factura",
       cedente: r.RznSoc,
       rutEmisor: r.RUTEmisor,
+      rutRecep: r.RUTRecep, // el RUT del deudor viaja con el evento (regla 81): se resuelve, nunca se arma
       pagador: r.RznSocRecep,
       deudor: r.RznSocRecep,
       tipoDeudor: tDeu,
@@ -18971,11 +18972,17 @@ function MotorPerformance({ recibidas, califican, sinClasificar, originadas, ori
 function agruparInboundPorCliente(eventos, asignar) {
   const map = new Map();
   (eventos || []).forEach((ev) => {
-    const k = ev.cedente || "—";
+    // POR RUT, NO POR NOMBRE (regla 81, reportado el 24-09-2026). Agrupar por nombre juntaba a dos
+    // cedentes homónimos y separaba al mismo escrito de dos formas, y tiraba el RUT que el evento trae:
+    // sin él la fila salía sin `rutEmisor`, `capacidadDeudores` salía por su guarda (0/0/0) y
+    // `lineaDeCliente` no encontraba línea. El nombre queda como respaldo del evento sin RUT.
+    const k = ev.rutEmisor || ev.cedente || "—";
     let g = map.get(k);
     if (!g) {
       g = {
-        cliente: k,
+        cliente: ev.cedente || "—",
+        rutEmisor: ev.rutEmisor || "",
+        opId: ev.opId || "", // el código de la oportunidad, derivado del RUT: es lo que va en el subtítulo
         facturas: 0,
         monto: 0,
         deudores: new Map(),
@@ -18989,8 +18996,8 @@ function agruparInboundPorCliente(eventos, asignar) {
     g.facturas += ev.nFacturas || 1;
     g.monto += ev.monto || 0;
     if (ev.tag) g.tags.add(ev.tag);
-    const dk = ev.pagador || "—";
-    const d = g.deudores.get(dk) || { name: dk, facturas: 0, monto: 0 };
+    const dk = ev.rutRecep || ev.pagador || "—";
+    const d = g.deudores.get(dk) || { name: ev.pagador || "—", rut: ev.rutRecep || "", facturas: 0, monto: 0 };
     d.facturas += ev.nFacturas || 1;
     d.monto += ev.monto || 0;
     g.deudores.set(dk, d);
@@ -19000,8 +19007,9 @@ function agruparInboundPorCliente(eventos, asignar) {
     .map((g) => {
       const deudores = [...g.deudores.values()].sort((a, b) => b.monto - a.monto);
       return {
-        id: "OF-" + g.cliente,
+        id: g.opId || "OF-" + g.cliente, // el `opId` del evento; el nombre sólo si el evento no trajo RUT
         cliente: g.cliente,
+        rutEmisor: g.rutEmisor,
         deudor: deudores[0] ? deudores[0].name : "—",
         deudores,
         sector: g.sector,
@@ -25908,6 +25916,11 @@ function rolDeAreaNivel(area, nivel, padron) {
 // del tenant nuevo no podía aprobar nada, que es justo para lo que se lo crea—. `ROL_ATRIB` no lo
 // declara a propósito: cubre las tres áreas en el nivel máximo y no un par (área, nivel).
 const esRolAdmin = (code) => ROL_USUARIO[code] === "admin" || code === "ADMIN";
+// EL GESTOR DEL PIPELINE es quien ve TODO lo sin clasificar del inbound (regla 81, definición del usuario el
+// 24-09-2026: «deberían mostrarse al ejecutivo gestor del pipeline, y sólo él ve todo lo que no tiene
+// clasificación»). Es el ROL `inbound` —y el admin, que ve todo—, no el código `IB`: la visibilidad sigue
+// al rol por lo mismo que la atribución.
+const esGestorPipeline = (code) => esRolAdmin(code) || ROL_USUARIO[code] === "inbound";
 function atribDeRol(code) {
   if (esRolAdmin(code)) return { riesgo: 5, comercial: 5, operaciones: 5 };
   const a = ROL_ATRIB[ROL_USUARIO[code]];
@@ -42981,7 +42994,7 @@ function analisisDeudoresDeDeal(deal) {
         const tipo = tipoDeudor(null, x.name);
         return {
           nombre: x.name,
-          rut: porNombre.get(x.name) || "",
+          rut: x.rut || porNombre.get(x.name) || "",
           prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado",
           nota: notaDeudor(x.name) || 0,
           n: x.facturas || 0,
@@ -43135,9 +43148,15 @@ function lineaDeVersion(deal) {
 // gira». La cifra que sí es una asignación aparece en Simulación, después de Re-evaluar (regla 14).
 function capacidadDeudores(deudores, rutCliente, inyecta) {
   const vacio = { primeConLinea: { n: 0, monto: 0 }, otrosConLinea: { n: 0, monto: 0 }, sinLinea: { n: 0, monto: 0 } };
-  if (!deudores || !deudores.length || !rutCliente) return vacio;
-  const est = (inyecta && inyecta.estadoCliente) || lineasDeCliente(rutCliente);
-  if (!est) return vacio;
+  if (!deudores || !deudores.length) return vacio;
+  // EL DESGLOSE SIEMPRE CUADRA CON EL ENCABEZADO (24-09-2026, reportado por el usuario mirando el tubo: «7 deudores ·
+  // 7 facturas» y debajo «0 Prime con línea · 0 Otros con línea · 0 deudores sin línea» — «eso siempre debiera
+  // cuadrar»). Sin RUT del cliente, o sin su estado de líneas, NADIE tiene línea: los N deudores van a «sin línea»
+  // con todo su monto —la plata trabada que ese chip existe para mostrar—, no a cero. Antes las dos guardas devolvían
+  // el vacío, y el lector no distingue «no hay deudores» de «no se pudo preguntar»: la fila contaba 7 y el desglose
+  // sumaba 0. Regla 81, caso 178.
+  const est = rutCliente ? (inyecta && inyecta.estadoCliente) || lineasDeCliente(rutCliente) : null;
+  if (!est) return { ...vacio, sinLinea: { n: deudores.length, monto: mmRound(deudores.reduce((a, d) => a + (d.monto || 0), 0)) } };
   const dispDe = (l) => Math.max(0, (l.aprobado || 0) - (l.vigente || 0));
   // El comodín del cliente: LF4 para cualquiera, LF1 sólo para Prime. Es UN pozo compartido, así que
   // se calcula una vez y no por deudor — calcularlo adentro del bucle sugeriría que cada uno tiene el
@@ -47890,7 +47909,9 @@ export default function PipelineComercial() {
   //   · Ejecutivo → SÓLO las empresas de SU cartera (`esCliente` y él es el dueño).
   //   · Inbound y jefatura → SÓLO las que no son de la cartera de nadie. Es el trabajo del rol
   //     `inbound`: repartirlas. La jefatura las conserva porque también asigna.
-  const ofOtrasVisible = (ev) => (esEjecutivoSesion ? ev.esCliente && asignarEjecutivo(ev) === usuario : !ev.esCliente);
+  // SÓLO EL GESTOR DEL PIPELINE VE LO SIN CLASIFICAR, y lo ve entero (regla 81). Antes la ejecutiva
+  // comercial veía las de su cartera y cualquier no-ejecutivo las sin dueño: a Carla se le mostraban.
+  const ofOtrasVisible = (ev) => !!ev && esGestorPipeline(usuario);
   const [vistaApp, setVistaApp] = useState("dashboard"); // vista principal in-page; aterriza en el Dashboard tras login
   // Navega a un módulo y registra la acción del usuario en la auditoría (con su nombre).
   const irA = (v, label) => {
@@ -48118,7 +48139,9 @@ export default function PipelineComercial() {
       return streamFeed.filter(ofOtrasVisible).map((ev) => ({
         id: ev.id,
         cliente: ev.cedente,
+        rutEmisor: ev.rutEmisor,
         deudor: ev.pagador,
+        rutRecep: ev.rutRecep,
         sector: ev.sector,
         stage: "—",
         facturas: ev.nFacturas,
@@ -52480,9 +52503,9 @@ export default function PipelineComercial() {
     // acumulado. Sin esto, verlo subir y bajar no tiene explicación en pantalla (regla 40).
     {
       id: "otrasfacturas",
-      label: esEjecutivoSesion ? "Otras Empresas" : "Otras facturas",
+      label: "Otras facturas",
       count: directorio ? 0 : inboundMiasFilas,
-      tip: `Clientes con facturas sin clasificar que hay AHORA en la Bandeja Inbound${esEjecutivoSesion ? " y son de tu cartera" : " y no tienen ejecutivo asignado"} — una fila por cliente, igual que la lista. La bandeja conserva ${(cfgT.topeBandeja || 500).toLocaleString("es-CL")} documentos: al llenarse salen primero las que NO son de nadie, así que este número sube con lo que entra y baja sólo cuando se asignan o se descartan.${bandejaRecortadas.conDueno > 0 ? ` Ojo: ya salieron ${bandejaRecortadas.conDueno.toLocaleString("es-CL")} de la cartera por el tope.` : ""}`,
+      tip: `Clientes con facturas sin clasificar que hay AHORA en la Bandeja Inbound${esGestorPipeline(usuario) ? "" : " — sólo las ve el gestor del pipeline, así que para ti esta lista queda vacía"} — una fila por cliente, igual que la lista. La bandeja conserva ${(cfgT.topeBandeja || 500).toLocaleString("es-CL")} documentos: al llenarse salen primero las que NO son de nadie, así que este número sube con lo que entra y baja sólo cuando se asignan o se descartan.${bandejaRecortadas.conDueno > 0 ? ` Ojo: ya salieron ${bandejaRecortadas.conDueno.toLocaleString("es-CL")} de la cartera por el tope.` : ""}`,
     },
   ];
 
@@ -53379,7 +53402,7 @@ export default function PipelineComercial() {
                       onOpen={abrirDetalle}
                       onMover={moverEtapa}
                       onReject={reject}
-                      modoAsignar={!esEjecutivoSesion && quickFilter === "otrasfacturas"}
+                      modoAsignar={esGestorPipeline(usuario) && quickFilter === "otrasfacturas"}
                       onAsignarExec={asignarClienteAExec}
                       mostrarEjec={!esEjecutivoSesion}
                     />
