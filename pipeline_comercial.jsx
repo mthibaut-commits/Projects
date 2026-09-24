@@ -29964,7 +29964,9 @@ function destinatariosTarea(t) {
 }
 function addPanelTarea(t) {
   const dias = t.dias || 1;
-  PANEL_TAREAS.unshift({ id: `PT-${PANEL_TAREAS_SEQ++}`, ts: Date.now(), venceTs: Date.now() + dias * 86400000, hecha: false, para: [], ops: [], ...t });
+  // UNA lectura del reloj: `venceTs` deriva de `ts` y con dos `Date.now()` podían diferir en un milisegundo (el patrón que cazó el caso 138 en `emitirOtp`).
+  const ahora = Date.now();
+  PANEL_TAREAS.unshift({ id: `PT-${PANEL_TAREAS_SEQ++}`, ts: ahora, venceTs: ahora + dias * 86400000, hecha: false, para: [], ops: [], ...t });
 }
 // Bitácora de gestión: comentarios que el ejecutivo anota por ítem de tarea (id = dealId para
 // prioridades, PT-x para tareas asignadas). Persistente a nivel de módulo durante la sesión.

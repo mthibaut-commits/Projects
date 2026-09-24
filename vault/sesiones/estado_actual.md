@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-24T07:10:00Z
+timestamp: 2026-09-24T07:30:00Z
 ---
 
 # Estado actual
@@ -45,7 +45,7 @@ oportunidad es UNA lista (`poolOportunidad`) y la fila del tubo cuenta lo mismo 
 ([log](./2026-09-24_la_oportunidad_es_una_sola_lista.md)). Y **regla 85 · ADR-0026 · caso 181**: el corte del día lee el
 estado del proceso —versión emitida o pre-evaluación— y ya no elimina la operación que el ejecutivo trabaja en el detalle
 ([log](./2026-09-24_el_corte_lee_el_proceso.md)). Y la **tarjeta de otorgamiento termina en la banda** («Modificar solicitud» abre un panel lateral; [log](./2026-09-24_la_tarjeta_termina_en_la_banda.md)).
-Y el **caso 138 (CRY-01) cazó un flaky del FUENTE** (177/178 sobre `b4a5b17`): `emitirOtp` leía `Date.now()` dos veces por registro y `exp − emitido` dejaba de ser el TTL al cambiar el milisegundo; hoy lee el reloj UNA vez ([log](./2026-09-24_una_lectura_del_reloj.md)).
+Y el **caso 138 (CRY-01) cazó un flaky del FUENTE** (177/178 sobre `b4a5b17`): `emitirOtp` leía `Date.now()` dos veces por registro y `exp − emitido` dejaba de ser el TTL al cambiar el milisegundo; hoy lee el reloj UNA vez, y `addPanelTarea` (`ts`/`venceTs`) igual, por pedido del usuario ([log](./2026-09-24_una_lectura_del_reloj.md)).
 
 > ## 🎯 Siguiente paso
 > 1. **Pregunta abierta al usuario (24-09):** ¿un aviso a los aprobadores **al publicar** la oferta, además de la
@@ -54,7 +54,7 @@ Y el **caso 138 (CRY-01) cazó un flaky del FUENTE** (177/178 sobre `b4a5b17`): 
 > 2. **Cinco gaps del curse decididos el 23-09 y sin implementar** (matriz §2.2, verbatim del usuario): G-23 · G-18 · G-27 · G-28 · G-05; G-29 como T2.
 > 3. **Lo demás**: selector de sesión angosto · chip «Negociación» tras comité · `.bat` · O01 · 28 · 13-quater · `pipeline.zip` · ¿el KPI del tubo suma la oportunidad completa (regla 84)?
 
-## En vuelo · `claude/sharp-hypatia-7wru5g`: una lectura del reloj en `emitirOtp` (caso 138, T2), verificado, por mezclar a `main`
+## En vuelo · `claude/sharp-hypatia-7wru5g`: una lectura del reloj en `emitirOtp` y `addPanelTarea` (caso 138, T2), verificado, por mezclar a `main`
 **Antes de modificar se integra `main`** (`node sincronizar_main.mjs`, paso 0) y se verifica el árbol MEZCLADO, no la rama.
 
 ## Bloqueos · del usuario, desde Windows

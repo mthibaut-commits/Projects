@@ -1,12 +1,12 @@
 ---
 type: sesion
 title: "Una lectura del reloj: el caso 138 cazó un flaky del FUENTE en emitirOtp"
-description: "Sobre main en b4a5b17, sin tocar el .jsx, la suite dio 177/178: el caso 138 (CRY-01) falló en «exp = emitido + TTL». emitirOtp leía Date.now() dos veces y el milisegundo cambió entre las dos. Una sola lectura del reloj; el gate regla_cry_01 sigue verde. T2, tres líneas"
+description: "Sobre main en b4a5b17, sin tocar el .jsx, la suite dio 177/178: el caso 138 (CRY-01) falló en «exp = emitido + TTL». emitirOtp leía Date.now() dos veces y el milisegundo cambió entre las dos. Una sola lectura del reloj; el gate regla_cry_01 sigue verde. Y por pedido del usuario, el mismo T2 en addPanelTarea (ts/venceTs), el otro sitio con el patrón"
 tags: [sesion, cry-01, otp, flaky, verificacion]
 timestamp: 2026-09-24T06:50:00Z
 ---
 
-# Una lectura del reloj · caso 138 · CRY-01
+# Una lectura del reloj · caso 138 · CRY-01 · y `addPanelTarea`
 
 ## Qué vio el usuario
 
@@ -42,7 +42,7 @@ emitió y `exp` sigue siendo `emitido + TTL`; lo único que cambia es que ahora 
 `hash: await otpHash(neg, sal, code)` y ningún `code` suelto, y que exista `const sal = salAleatoria()`. Una variable
 `ahora` dentro del objeto no altera nada de eso, y la sonda negativa que planta `code,` tras `sal,` sigue anclando.
 
-## Verificación (los seis pasos de `CLAUDE.md`, en orden, sobre la rama al día con `origin/main` en `ea547ea`)
+## Verificación (los seis pasos de `CLAUDE.md`, en orden; primer commit sobre `ea547ea`, segundo sobre `27ae525` integrado)
 
 | Paso | Resultado |
 |---|---|
@@ -51,27 +51,28 @@ emitió y `exp` sigue siendo `emitido + TTL`; lo único que cambia es que ahora 
 | 1 · `tsc` | 0 errores |
 | 2 · duplicados | vacío |
 | 3 · `build_app.mjs` | OK, hashes del vendor calzan |
-| 4 · gates de contrato | **614/614** (incluye `regla_cry_01`) |
-| 5 · suite | **179/179 PASA** (el 138 incluido) |
-| 6 · e2e | **40/40 PASA** (~9 min, en paralelo con la escritura del log) |
+| 4 · gates de contrato | **614/614** (incluye `regla_cry_01`) · segundo commit **619/619** |
+| 5 · suite | **179/179 PASA** (el 138 incluido) · segundo commit **181/181** |
+| 6 · e2e | **40/40 PASA** · segundo commit **41/41** |
 
 No toca la UI: el paso 7 (capturas) no corre.
 
-## Lo que quedó medido y NO se tocó
+## El segundo sitio: `addPanelTarea`, por pedido del usuario
 
-`grep -nE 'Date\.now\(\).*Date\.now\(\)'` encuentra **dos sitios más** con dos lecturas del reloj en un mismo registro:
+`grep -nE 'Date\.now\(\).*Date\.now\(\)'` encontró **dos sitios más** con dos lecturas del reloj en un mismo registro. El
+primer commit los dejó anotados para no ampliar un T2 de una línea; el usuario pidió arreglar el que tiene el mismo patrón:
 
-- `PANEL_TAREAS.unshift({ … ts: Date.now(), venceTs: Date.now() + dias * 86400000 … })` (~29888): el mismo patrón —una
-  marca derivada de la otra—, pero **ningún caso asevera `venceTs - ts`**, así que hoy no es flaky. Cuando alguien lo
-  gatee, va con `ahora` primero.
-- `{ …r, tUltClienteResp: Date.now(), …(tOferta: Date.now()) }` (~49772): dos hechos distintos con dos marcas; no hay
-  relación que mantener. Se deja.
-
-Se anotan para no ampliar un T2 de una línea; no van al tablero porque no bloquean ni deciden.
+- `addPanelTarea` (~29967): `PANEL_TAREAS.unshift({ … ts: Date.now(), venceTs: Date.now() + dias * 86400000 … })` — la
+  misma forma, una marca derivada de la otra. **Ningún caso asevera `venceTs - ts`**, así que no era flaky hoy; era el
+  mismo defecto latente, y se arregla igual: `const ahora = Date.now()` y `ts: ahora, venceTs: ahora + dias * 86400000`.
+  El `...t` que viene después sigue pudiendo pisar las dos marcas, como antes. Segundo commit, mismo T2, verificación
+  completa de nuevo sobre el árbol ya integrado con `main` (`27ae525`: reglas 84 y 85, ADR-0026).
+- `{ …r, tUltClienteResp: Date.now(), …(tOferta: Date.now()) }` (~49849): dos hechos distintos con dos marcas; no hay
+  relación que mantener. **Se deja**: con eso el `grep` queda en un solo sitio, y ese es legítimo.
 
 ## Aprendizaje (lo que en tres meses sigue importando)
 
 Un registro con dos marcas de tiempo **relacionadas** (`emitido`/`exp`, `ts`/`venceTs`) toma el reloj UNA vez y deriva
-la segunda. Dos `Date.now()` en una misma expresión, con o sin `await` en medio, son dos relojes: pasan `tsc`, el linter,
+la segunda; dos marcas de hechos DISTINTOS (`tUltClienteResp`/`tOferta`) pueden leerlo dos veces, porque nada las ata. Dos `Date.now()` en una misma expresión, con o sin `await` en medio, son dos relojes: pasan `tsc`, el linter,
 el build y casi siempre la suite, y fallan una vez cada tantas corridas con la máquina cargada. Cuando un caso falla
 «a veces» en una igualdad de tiempos, mirar primero cuántas veces se lee el reloj.
